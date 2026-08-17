@@ -21,9 +21,9 @@ const SELECTORS = {
   experience: '.expwdth, .exp span',
   skills: '.tags-gt li, .tagsAndButtons li',
   postedDate: '.job-post-day, .fleft.postedDate',
-  loadMore: '.styles_btn-secondary__2AsIP, a.btn-secondary',
+  paginationLink: 'div.styles_pages__v1rAK a',
   loginTrigger: 'a[title="Jobseeker Login"], #login_Layer',
-  loginEmail: '#usernameField, input[placeholder="Enter your active Email ID / Username"]',
+  loginEmail: '#usernameField, input[placeholder="Enter your active Email ID"]',
   loginPassword: '#passwordField, input[placeholder="Enter your password"]',
   loginSubmit: 'button[type="submit"]',
   loggedInMarker: '.nI-gNb-drawer__icon, a[title="My Naukri"]',
@@ -113,35 +113,54 @@ export class NaukriAdapter extends JobPortalAdapter {
   async discover(criteria) {
     const maxPages = criteria.maxPages ?? 3;
     const searchUrl = this._buildSearchUrl(criteria);
-    console.log(`[naukri] Navigating to search: ${searchUrl}`);
-    await this.page.goto(searchUrl, { waitUntil: 'domcontentloaded' });
-    await humanDelay();
 
     const seenThisRun = new Map();
 
     for (let pageNum = 1; pageNum <= maxPages; pageNum++) {
+      console.log(`[naukri] Navigating to page ${pageNum}`);
+
+      if (pageNum === 1) {
+        await this.page.goto(searchUrl, { waitUntil: 'domcontentloaded' });
+      } else {
+        // Don't guess the URL — read the real href Naukri renders in its
+        // pagination bar (div.styles_pages__v1rAK a) for this page number.
+        const pageLink = this.page
+          .locator(`${SELECTORS.paginationLink}[href$="-${pageNum}"]`)
+          .first();
+
+        const count = await pageLink.count();
+        if (!count) {
+          console.log(`[naukri] Could not find pagination link for page ${pageNum} — stopping.`);
+          break;
+        }
+
+        const href = await pageLink.getAttribute('href');
+        if (!href) {
+          console.log(`[naukri] Pagination link for page ${pageNum} has no href — stopping.`);
+          break;
+        }
+
+        const pageUrl = href.startsWith('http') ? href : `${BASE_URL}${href}`;
+        console.log(`[naukri] Page ${pageNum} URL: ${pageUrl}`);
+        await this.page.goto(pageUrl, { waitUntil: 'domcontentloaded' });
+      }
+
+      await humanDelay();
+
       await this.page.waitForSelector(SELECTORS.jobCard, { timeout: 20_000 }).catch(() => {});
       const cards = await this.page.locator(SELECTORS.jobCard).all();
       console.log(`[naukri] Page ${pageNum}: found ${cards.length} job cards on screen.`);
+
+      if (cards.length === 0) {
+        console.log('[naukri] No cards on this page — stopping.');
+        break;
+      }
 
       for (const card of cards) {
         const job = await this._extractJob(card);
         if (job && !seenThisRun.has(job.portalJobId)) {
           seenThisRun.set(job.portalJobId, job);
         }
-      }
-
-      if (pageNum === maxPages) break;
-
-      const loadMore = this.page.locator(SELECTORS.loadMore).first();
-      await card_scroll_into_view(this.page);
-      if (await loadMore.count()) {
-        await humanDelay();
-        await loadMore.click().catch(() => {});
-        await humanDelay(1500, 3000);
-      } else {
-        console.log('[naukri] No further pages found — stopping.');
-        break;
       }
     }
 
@@ -193,8 +212,4 @@ export class NaukriAdapter extends JobPortalAdapter {
     await this.context?.close();
     await this.browser?.close();
   }
-}
-
-async function card_scroll_into_view(page) {
-  await page.evaluate(() => window.scrollBy(0, window.innerHeight));
 }

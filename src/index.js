@@ -26,13 +26,13 @@ async function main() {
     console.log(`[result] ${newJobs.length} of those are new (not seen in previous runs).`);
     console.log(`[result] Total jobs tracked so far: ${store.all().length}`);
 
-    console.log('\n--- New jobs found this run ---');
-    for (const job of newJobs) {
-      console.log(
-        `• ${job.title} — ${job.company} (${job.location || 'location n/a'}) ` +
-        `[${job.experience || 'exp n/a'}]\n  ${job.url}`
-      );
-    }
+    // console.log('\n--- New jobs found this run ---');
+    // for (const job of newJobs) {
+    //   console.log(
+    //     `• ${job.title} — ${job.company} (${job.location || 'location n/a'}) ` +
+    //     `[${job.experience || 'exp n/a'}]\n  ${job.url}`
+    //   );
+    // }
     if (newJobs.length === 0) {
       console.log('(none — everything discovered was already in data/naukri-jobs.json)');
     }
