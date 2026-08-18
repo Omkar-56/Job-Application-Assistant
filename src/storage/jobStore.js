@@ -55,4 +55,7 @@ export class JobStore {
   _save() {
     writeFileSync(this.filePath, JSON.stringify(this.all(), null, 2), 'utf-8');
   }
+
+  /** No-op — kept so callers don't need to branch on which store they have. */
+  async close() {}
 }

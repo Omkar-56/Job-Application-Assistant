@@ -1,12 +1,28 @@
 import { config } from './config/config.js';
 import { NaukriAdapter } from './adapters/naukri/naukriAdapter.js';
 import { JobStore } from './storage/jobStore.js';
+import { PostgresJobStore } from './storage/postgresJobStore.js';
 import { applyFilters } from './filters/ruleBasedFilter.js';
 import { writeFileSync } from 'node:fs';
 import path from 'node:path';
 
+function createStore() {
+  if (config.db.backend === 'json') {
+    console.log('[storage] Using JSON file store (STORAGE_BACKEND=json).');
+    return new JobStore(config.dataDir, 'naukri');
+  }
+  if (!config.db.connectionString) {
+    throw new Error(
+      'DATABASE_URL is not set. Set it in .env (see .env.example), or set ' +
+        'STORAGE_BACKEND=json to use the JSON file store instead.'
+    );
+  }
+  console.log('[storage] Using PostgreSQL store.');
+  return new PostgresJobStore(config.db.connectionString, 'naukri');
+}
+
 async function main() {
-  console.log('=== Job Application Assistant — Phase 1: Naukri Discovery ===');
+  console.log('=== Job Application Assistant — Naukri Discovery ===');
   console.log(`Criteria: ${JSON.stringify(config.search)}`);
   console.log(`Headless: ${config.headless}`);
 
@@ -18,16 +34,19 @@ async function main() {
       : null,
   });
 
-  const store = new JobStore(config.dataDir, 'naukri');
+  const store = createStore();
 
   try {
     await adapter.login();
     const discovered = await adapter.discover(config.search);
     console.log(`\n[result] Discovered ${discovered.length} jobs this run.`);
 
-    const newJobs = store.addMany(discovered);
+    // addMany/all work whether the store is sync (JSON) or async (Postgres)
+    // — awaiting a plain value just resolves immediately.
+    const newJobs = await store.addMany(discovered);
+    const allJobs = await store.all();
     console.log(`[result] ${newJobs.length} of those are new (not seen in previous runs).`);
-    console.log(`[result] Total jobs tracked so far: ${store.all().length}`);
+    console.log(`[result] Total jobs tracked so far: ${allJobs.length}`);
 
     // console.log('\n--- New jobs found this run ---');
     // for (const job of newJobs) {
@@ -37,12 +56,12 @@ async function main() {
     //   );
     // }
     if (newJobs.length === 0) {
-      console.log('(none — everything discovered was already in data/naukri-jobs.json)');
+      console.log('(none — everything discovered was already tracked)');
     }
 
-    console.log('\n=== Phase 2: applying rule-based filter ===');
-    const { matched, rejected } = applyFilters(store.all(), config.filterRules);
-    console.log(`[filter] ${matched.length} of ${store.all().length} tracked jobs pass the current rules.`);
+    console.log('\n=== Applying rule-based filter ===');
+    const { matched, rejected } = applyFilters(allJobs, config.filterRules);
+    console.log(`[filter] ${matched.length} of ${allJobs.length} tracked jobs pass the current rules.`);
 
     const filteredPath = path.join(config.dataDir, 'naukri-jobs-filtered.json');
     writeFileSync(filteredPath, JSON.stringify(matched, null, 2), 'utf-8');
@@ -50,12 +69,13 @@ async function main() {
 
     if (rejected.length) {
       console.log(`\n[filter] ${rejected.length} rejected — reasons (for tuning filterRules.json):`);
-      for (const { job, reasons } of rejected) {
-        console.log(`  • ${job.title} — ${job.company}: ${reasons.join('; ')}`);
-      }
+      // for (const { job, reasons } of rejected) {
+      //   console.log(`  • ${job.title} — ${job.company}: ${reasons.join('; ')}`);
+      // }
     }
   } finally {
     await adapter.close();
+    await store.close();
   }
 }
 
