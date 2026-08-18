@@ -1,6 +1,6 @@
 {
-  "includeKeywords": [],
-  "excludeKeywords": [],
-  "experience": { "min": null, "max": null },
+  "includeKeywords": ["node", "node.js", "full stack", "software", "backend"],
+  "excludeKeywords": ["senior", "manager", "lead", "experienced"],
+  "experience": { "min": 0, "max": 5 },
   "onUnknownExperience": "include"
 }
