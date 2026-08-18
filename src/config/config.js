@@ -26,4 +26,9 @@ export const config = {
   search: loadSearchCriteria(),
   filterRules: loadFilterRules(),
   dataDir: path.join(__dirname, '..', '..', 'data'),
+  db: {
+    connectionString: process.env.DATABASE_URL || null,
+    // 'postgres' (default, Phase 3) or 'json' (Phase 1/2 fallback for quick local testing)
+    backend: (process.env.STORAGE_BACKEND || 'postgres').toLowerCase(),
+  },
 };
