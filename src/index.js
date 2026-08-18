@@ -1,6 +1,9 @@
 import { config } from './config/config.js';
 import { NaukriAdapter } from './adapters/naukri/naukriAdapter.js';
 import { JobStore } from './storage/jobStore.js';
+import { applyFilters } from './filters/ruleBasedFilter.js';
+import { writeFileSync } from 'node:fs';
+import path from 'node:path';
 
 async function main() {
   console.log('=== Job Application Assistant — Phase 1: Naukri Discovery ===');
@@ -35,6 +38,21 @@ async function main() {
     // }
     if (newJobs.length === 0) {
       console.log('(none — everything discovered was already in data/naukri-jobs.json)');
+    }
+
+    console.log('\n=== Phase 2: applying rule-based filter ===');
+    const { matched, rejected } = applyFilters(store.all(), config.filterRules);
+    console.log(`[filter] ${matched.length} of ${store.all().length} tracked jobs pass the current rules.`);
+
+    const filteredPath = path.join(config.dataDir, 'naukri-jobs-filtered.json');
+    writeFileSync(filteredPath, JSON.stringify(matched, null, 2), 'utf-8');
+    console.log(`[filter] Wrote matched jobs to ${filteredPath}`);
+
+    if (rejected.length) {
+      console.log(`\n[filter] ${rejected.length} rejected — reasons (for tuning filterRules.json):`);
+      for (const { job, reasons } of rejected) {
+        console.log(`  • ${job.title} — ${job.company}: ${reasons.join('; ')}`);
+      }
     }
   } finally {
     await adapter.close();

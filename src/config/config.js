@@ -10,6 +10,11 @@ function loadSearchCriteria() {
   return JSON.parse(raw);
 }
 
+function loadFilterRules() {
+  const raw = readFileSync(path.join(__dirname, 'filterRules.json'), 'utf-8');
+  return JSON.parse(raw);
+}
+
 export const config = {
   headless: (process.env.HEADLESS ?? 'false').toLowerCase() === 'true',
   maxPages: Number(process.env.MAX_PAGES ?? 3),
@@ -19,5 +24,6 @@ export const config = {
     storageStatePath: path.join(__dirname, '..', '..', 'auth', 'naukri-state.json'),
   },
   search: loadSearchCriteria(),
+  filterRules: loadFilterRules(),
   dataDir: path.join(__dirname, '..', '..', 'data'),
 };

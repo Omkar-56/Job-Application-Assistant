@@ -1,0 +1,6 @@
+{
+  "includeKeywords": [],
+  "excludeKeywords": [],
+  "experience": { "min": null, "max": null },
+  "onUnknownExperience": "include"
+}
