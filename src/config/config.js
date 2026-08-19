@@ -31,4 +31,10 @@ export const config = {
     // 'postgres' (default, Phase 3) or 'json' (Phase 1/2 fallback for quick local testing)
     backend: (process.env.STORAGE_BACKEND || 'postgres').toLowerCase(),
   },
+  apply: {
+    // Safety default: nothing is ever actually submitted unless DRY_RUN is
+    // explicitly set to "false" in .env.
+    dryRun: (process.env.DRY_RUN ?? 'true').toLowerCase() !== 'false',
+    maxPerRun: Number(process.env.MAX_APPLICATIONS_PER_RUN ?? 5),
+  },
 };

@@ -27,6 +27,12 @@ const SELECTORS = {
   loginPassword: '#passwordField, input[placeholder="Enter your password"]',
   loginSubmit: 'button[type="submit"]',
   loggedInMarker: '.nI-gNb-drawer__icon, a[title="My Naukri"]',
+  // --- Phase 4: apply flow ---
+  applyButton: 'button:text-is("Apply"), #apply-button',
+  appliedMarker: 'button:text-is("Applied")',
+  // The recruiter/Naukri chat panel seen in the screenshots — its text
+  // input is the clearest, least-likely-to-change signal that it's open.
+  chatQuestionInput: 'input[placeholder="Type message here..."]',
 };
 
 export class NaukriAdapter extends JobPortalAdapter {
@@ -206,6 +212,64 @@ export class NaukriAdapter extends JobPortalAdapter {
       console.warn('[naukri] Skipped a card due to extraction error:', err.message);
       return null;
     }
+  }
+
+  /**
+   * Opens a job page and applies to it — or, in dry-run mode, just reports
+   * what it would have done. Detects the two flows you found in Naukri's
+   * UI: a direct apply (button click is enough) and a chat-style
+   * recruiter-questions panel (handed off to answerStrategy).
+   *
+   * @param {object} job - a job object from discover()/the store, needs `.url`
+   * @param {{ dryRun: boolean, answerStrategy: import('../../apply/answerStrategies/AnswerStrategy.js').AnswerStrategy }} opts
+   * @returns {Promise<{ status: 'applied'|'dry_run'|'needs_manual_review'|'failed', reason?: string }>}
+   */
+  async applyToJob(job, { dryRun = true, answerStrategy } = {}) {
+    console.log(`\n[naukri] Opening job: ${job.title} — ${job.company}`);
+    await this.page.goto(job.url, { waitUntil: 'domcontentloaded' });
+    await humanDelay();
+
+    const applyBtn = this.page.locator(SELECTORS.applyButton).first();
+    if (!(await applyBtn.count())) {
+      return { status: 'failed', reason: 'Apply button not found (layout may differ, or listing is closed)' };
+    }
+
+    const btnText = (await applyBtn.textContent())?.trim().toLowerCase();
+    if (btnText === 'applied') {
+      console.log('[naukri] Already applied to this job — skipping.');
+      return { status: 'applied', reason: 'already applied per Naukri UI' };
+    }
+
+    if (dryRun) {
+      console.log(`[naukri] [DRY RUN] Would click Apply for "${job.title}" — no click performed.`);
+      return { status: 'dry_run' };
+    }
+
+    await humanDelay();
+    await applyBtn.click();
+    await humanDelay(1500, 2500);
+
+    const chatOpen = (await this.page.locator(SELECTORS.chatQuestionInput).count()) > 0;
+    if (chatOpen) {
+      console.log('[naukri] Recruiter questions popped up — handing off to answer strategy.');
+      const result = await answerStrategy.handleQuestions({
+        job,
+        checkStillOpen: async () => (await this.page.locator(SELECTORS.chatQuestionInput).count()) > 0,
+      });
+      if (!result.completed) {
+        return { status: 'needs_manual_review', reason: result.reason || 'chat questions left unanswered' };
+      }
+    }
+
+    await humanDelay(1000, 2000);
+    const confirmedApplied = (await this.page.locator(SELECTORS.appliedMarker).count()) > 0;
+    if (confirmedApplied) {
+      console.log('[naukri] Application confirmed.');
+      return { status: 'applied' };
+    }
+
+    console.log('[naukri] Could not confirm the application succeeded — flagging for manual review.');
+    return { status: 'needs_manual_review', reason: 'no success confirmation detected after apply' };
   }
 
   async close() {

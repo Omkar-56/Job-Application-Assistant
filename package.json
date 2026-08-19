@@ -7,7 +7,9 @@
   "scripts": {
     "discover": "node src/index.js",
     "discover:headed": "HEADLESS=false node src/index.js",
-    "migrate": "node src/storage/migrate.js"
+    "migrate": "node src/storage/migrate.js",
+    "apply": "node src/apply.js",
+    "apply:headed": "HEADLESS=false node src/apply.js"
   },
   "dependencies": {
     "dotenv": "^16.4.5",

@@ -39,8 +39,9 @@ export class JobStore {
     const added = [];
     for (const job of jobs) {
       if (!this._jobs.has(job.portalJobId)) {
-        this._jobs.set(job.portalJobId, job);
-        added.push(job);
+        const withStatus = { applicationStatus: 'discovered', appliedAt: null, ...job };
+        this._jobs.set(job.portalJobId, withStatus);
+        added.push(withStatus);
       }
     }
     this._save();
@@ -50,6 +51,19 @@ export class JobStore {
   all() {
     if (!this._loaded) this.load();
     return [...this._jobs.values()];
+  }
+
+  /**
+   * @param {string} portalJobId
+   * @param {'discovered'|'dry_run'|'applied'|'needs_manual_review'|'failed'} status
+   */
+  updateApplicationStatus(portalJobId, status) {
+    if (!this._loaded) this.load();
+    const job = this._jobs.get(portalJobId);
+    if (!job) return;
+    job.applicationStatus = status;
+    if (status === 'applied') job.appliedAt = new Date().toISOString();
+    this._save();
   }
 
   _save() {

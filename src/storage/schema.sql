@@ -14,3 +14,10 @@ CREATE TABLE IF NOT EXISTS jobs (
 );
 
 CREATE INDEX IF NOT EXISTS idx_jobs_portal ON jobs (portal);
+
+-- Phase 4: application tracking. Additive — safe to re-run on a DB that
+-- already has the Phase 3 table.
+ALTER TABLE jobs ADD COLUMN IF NOT EXISTS application_status TEXT NOT NULL DEFAULT 'discovered';
+ALTER TABLE jobs ADD COLUMN IF NOT EXISTS applied_at TIMESTAMPTZ;
+
+CREATE INDEX IF NOT EXISTS idx_jobs_application_status ON jobs (application_status);

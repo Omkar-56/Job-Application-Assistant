@@ -30,6 +30,16 @@ export class JobPortalAdapter {
     throw new Error('discover() not implemented');
   }
 
+  /**
+   * Applies to a single job (or, in dry-run mode, reports what it would do).
+   * @param {object} job
+   * @param {{ dryRun: boolean, answerStrategy: object }} opts
+   * @returns {Promise<{ status: 'applied'|'dry_run'|'needs_manual_review'|'failed', reason?: string }>}
+   */
+  async applyToJob(job, opts) {
+    throw new Error('applyToJob() not implemented');
+  }
+
   /** @returns {Promise<void>} */
   async close() {
     throw new Error('close() not implemented');

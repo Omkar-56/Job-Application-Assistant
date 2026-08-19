@@ -1,25 +1,9 @@
 import { config } from './config/config.js';
 import { NaukriAdapter } from './adapters/naukri/naukriAdapter.js';
-import { JobStore } from './storage/jobStore.js';
-import { PostgresJobStore } from './storage/postgresJobStore.js';
+import { createStore } from './storage/createStore.js';
 import { applyFilters } from './filters/ruleBasedFilter.js';
 import { writeFileSync } from 'node:fs';
 import path from 'node:path';
-
-function createStore() {
-  if (config.db.backend === 'json') {
-    console.log('[storage] Using JSON file store (STORAGE_BACKEND=json).');
-    return new JobStore(config.dataDir, 'naukri');
-  }
-  if (!config.db.connectionString) {
-    throw new Error(
-      'DATABASE_URL is not set. Set it in .env (see .env.example), or set ' +
-        'STORAGE_BACKEND=json to use the JSON file store instead.'
-    );
-  }
-  console.log('[storage] Using PostgreSQL store.');
-  return new PostgresJobStore(config.db.connectionString, 'naukri');
-}
 
 async function main() {
   console.log('=== Job Application Assistant — Naukri Discovery ===');
@@ -34,7 +18,7 @@ async function main() {
       : null,
   });
 
-  const store = createStore();
+  const store = createStore(config, 'naukri');
 
   try {
     await adapter.login();
@@ -48,13 +32,13 @@ async function main() {
     console.log(`[result] ${newJobs.length} of those are new (not seen in previous runs).`);
     console.log(`[result] Total jobs tracked so far: ${allJobs.length}`);
 
-    // console.log('\n--- New jobs found this run ---');
-    // for (const job of newJobs) {
-    //   console.log(
-    //     `• ${job.title} — ${job.company} (${job.location || 'location n/a'}) ` +
-    //     `[${job.experience || 'exp n/a'}]\n  ${job.url}`
-    //   );
-    // }
+    console.log('\n--- New jobs found this run ---');
+    for (const job of newJobs) {
+      console.log(
+        `• ${job.title} — ${job.company} (${job.location || 'location n/a'}) ` +
+        `[${job.experience || 'exp n/a'}]\n  ${job.url}`
+      );
+    }
     if (newJobs.length === 0) {
       console.log('(none — everything discovered was already tracked)');
     }
@@ -69,9 +53,9 @@ async function main() {
 
     if (rejected.length) {
       console.log(`\n[filter] ${rejected.length} rejected — reasons (for tuning filterRules.json):`);
-      // for (const { job, reasons } of rejected) {
-      //   console.log(`  • ${job.title} — ${job.company}: ${reasons.join('; ')}`);
-      // }
+      for (const { job, reasons } of rejected) {
+        console.log(`  • ${job.title} — ${job.company}: ${reasons.join('; ')}`);
+      }
     }
   } finally {
     await adapter.close();

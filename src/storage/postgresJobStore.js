@@ -77,6 +77,20 @@ export class PostgresJobStore {
     return rows.map(rowToJob);
   }
 
+  /**
+   * @param {string} portalJobId
+   * @param {'discovered'|'dry_run'|'applied'|'needs_manual_review'|'failed'} status
+   */
+  async updateApplicationStatus(portalJobId, status) {
+    await this.pool.query(
+      `UPDATE jobs
+       SET application_status = $1,
+           applied_at = CASE WHEN $1 = 'applied' THEN now() ELSE applied_at END
+       WHERE portal = $2 AND portal_job_id = $3`,
+      [status, this.portal, portalJobId]
+    );
+  }
+
   async close() {
     await this.pool.end();
   }
@@ -93,5 +107,7 @@ function rowToJob(row) {
     skills: row.skills,
     postedDate: row.posted_date,
     url: row.url,
+    applicationStatus: row.application_status,
+    appliedAt: row.applied_at,
   };
 }
