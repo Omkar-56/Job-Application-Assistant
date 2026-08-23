@@ -5,3 +5,4 @@ data/*.json
 !data/.gitkeep
 !auth/.gitkeep
 npm-debug.log*
+*.pdf
