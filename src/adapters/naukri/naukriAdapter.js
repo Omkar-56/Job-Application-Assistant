@@ -247,10 +247,21 @@ export class NaukriAdapter extends JobPortalAdapter {
 
     await humanDelay();
     await applyBtn.click();
-    await humanDelay(1500, 2500);
 
-    const chatOpen = (await this.page.locator(SELECTORS.chatQuestionInput).count()) > 0;
-    if (chatOpen) {
+    // Don't guess how long Naukri takes to render — actively wait (up to
+    // 15s) for either the chat panel or a success confirmation, whichever
+    // comes first. A fixed short delay here was the bug: if the panel took
+    // longer than the delay to appear, we'd wrongly conclude there wasn't
+    // one and move straight to the next job, which looked like the panel
+    // "closing immediately."
+    const [chatVisible, appliedVisible] = await Promise.all([
+      this.page.locator(SELECTORS.chatQuestionInput).first()
+        .waitFor({ state: 'visible', timeout: 15_000 }).then(() => true).catch(() => false),
+      this.page.locator(SELECTORS.appliedMarker).first()
+        .waitFor({ state: 'visible', timeout: 15_000 }).then(() => true).catch(() => false),
+    ]);
+
+    if (chatVisible) {
       console.log('[naukri] Recruiter questions popped up — handing off to answer strategy.');
       const result = await answerStrategy.handleQuestions({
         job,

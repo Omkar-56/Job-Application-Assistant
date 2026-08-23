@@ -34,8 +34,17 @@ export class ManualAnswerStrategy extends AnswerStrategy {
     while (Date.now() - start < this.timeoutMs) {
       const stillOpen = await checkStillOpen();
       if (!stillOpen) {
-        console.log(`[manual-answer] Panel closed — treating "${job.title}" as answered.`);
-        return { completed: true };
+        // The panel can flicker closed for a moment between questions —
+        // e.g. right after you submit an answer, while the next question
+        // loads in. Confirm it's REALLY gone before declaring done, so we
+        // don't cut you off mid-conversation and jump to the next job.
+        await new Promise((resolve) => setTimeout(resolve, 1500));
+        const reallyClosed = !(await checkStillOpen());
+        if (reallyClosed) {
+          console.log(`[manual-answer] Panel closed — treating "${job.title}" as answered.`);
+          return { completed: true };
+        }
+        console.log('[manual-answer] Panel reappeared (next question loading) — still waiting.');
       }
 
       if (Date.now() - lastReminder > 30_000) {
