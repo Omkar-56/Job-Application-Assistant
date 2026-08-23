@@ -37,4 +37,9 @@ export const config = {
     dryRun: (process.env.DRY_RUN ?? 'true').toLowerCase() !== 'false',
     maxPerRun: Number(process.env.MAX_APPLICATIONS_PER_RUN ?? 5),
   },
+  matching: {
+    resumePath: path.join(__dirname, '..', '..', process.env.RESUME_PATH || 'resume.pdf'),
+    // Each unmatched job costs one page load + one LLM call — kept small by default.
+    maxPerRun: Number(process.env.MATCH_MAX_PER_RUN ?? 10),
+  },
 };

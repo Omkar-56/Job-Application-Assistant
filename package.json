@@ -9,10 +9,13 @@
     "discover:headed": "HEADLESS=false node src/index.js",
     "migrate": "node src/storage/migrate.js",
     "apply": "node src/apply.js",
-    "apply:headed": "HEADLESS=false node src/apply.js"
+    "apply:headed": "HEADLESS=false node src/apply.js",
+    "match": "node src/match.js",
+    "match:headed": "HEADLESS=false node src/match.js"
   },
   "dependencies": {
     "dotenv": "^16.4.5",
+    "pdf-parse": "^1.1.1",
     "pg": "^8.12.0",
     "playwright": "^1.47.0"
   },

@@ -158,6 +158,69 @@ come up).
   to answer in the browser, then continue automatically once you close the
   panel.
 
+## Phase 6: AI job matching
+
+Adds semantic scoring on top of Phase 2's keyword filter, using your
+resume and a free LLM (Gemini 2.5 Flash-Lite by default — no credit card,
+generous free daily quota, native JSON output).
+
+**Pipeline:** resume PDF → parsed once into a structured, versioned
+`CandidateProfile` → jobs that already passed the Phase 2 rule-based filter
+→ full job description fetched → LLM scores it against your profile
+→ score/reasoning persisted in Postgres.
+
+**Why the local filter still runs first:** the LLM only scores what
+already passed keyword filtering, so a bad search doesn't burn API calls
+on hundreds of irrelevant postings.
+
+**Caching, simplified on purpose:** a job is only re-scored if it hasn't
+been scored *under the current resume version* — no fetch, no LLM call, if
+it has. This is simpler than hashing the job description itself (which
+would need fetching the JD before knowing whether to skip it) and it
+solves the main cost concern: reruns don't re-score everything every time.
+The trade-off is it won't notice if a listing's description silently
+changed after being scored — a reasonable gap for a personal tool, not
+something to over-engineer yet.
+
+**Setup:**
+
+1. `npm run migrate` (adds `candidate_profiles` table + match columns to
+   `jobs` — additive, safe on your existing DB).
+2. Get a free key at https://aistudio.google.com/apikey, set
+   `GEMINI_API_KEY` in `.env`.
+3. Put your resume PDF at the project root as `resume.pdf` (or set
+   `RESUME_PATH` to point elsewhere).
+4. `npm run match:headed`.
+
+**Notes:**
+
+- AI matching requires `STORAGE_BACKEND=postgres` — candidate profile
+  versioning needs a relational foreign key, so the JSON file store
+  intentionally doesn't support it (fails with a clear error if you try).
+- `MATCH_MAX_PER_RUN` (default 10) caps how many jobs get scored per run,
+  same spirit as `MAX_APPLICATIONS_PER_RUN` — each one costs a page load
+  plus an LLM call. Run again to continue with the rest.
+- Re-run any time you update your resume — a changed PDF gets a new hash,
+  triggers one fresh LLM parse, and gets a new profile version; all jobs
+  get rescored against it (old scores from the previous version stay in
+  the DB for history, just not reused).
+- `LLMJobMatcher` (`src/matching/llmMatcher.js`) only sees the normalized
+  job shape + description + profile — no Naukri awareness — so it'll work
+  unchanged for Wellfound/Indeed/etc. later.
+
+**What to test:**
+
+- First run: confirm it parses your resume once (`New or changed resume
+  detected...`), then scores up to `MATCH_MAX_PER_RUN` jobs with sensible
+  scores/reasoning.
+- Run again immediately: should say `0` or a small number `haven't been
+  scored`, and skip straight past everything already scored — instant, no
+  API calls.
+- Check the DB: `psql $DATABASE_URL -c "select title, match_score, match_reasoning from jobs where match_score is not null order by match_score desc limit 10;"`
+- Try editing your resume PDF slightly and re-running — confirm it detects
+  the change (`New or changed resume detected`) rather than reusing the
+  cached profile.
+
 ## What to test
 
 - Run once with your real search criteria and confirm the browser opens,

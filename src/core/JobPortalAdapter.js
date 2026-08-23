@@ -40,6 +40,16 @@ export class JobPortalAdapter {
     throw new Error('applyToJob() not implemented');
   }
 
+  /**
+   * Fetches full job description text, for jobs that passed the cheap
+   * local pre-filter and need LLM scoring.
+   * @param {object} job
+   * @returns {Promise<string>}
+   */
+  async fetchJobDescription(job) {
+    throw new Error('fetchJobDescription() not implemented');
+  }
+
   /** @returns {Promise<void>} */
   async close() {
     throw new Error('close() not implemented');

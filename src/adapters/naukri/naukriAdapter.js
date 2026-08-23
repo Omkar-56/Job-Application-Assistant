@@ -33,6 +33,8 @@ const SELECTORS = {
   // The recruiter/Naukri chat panel seen in the screenshots — its text
   // input is the clearest, least-likely-to-change signal that it's open.
   chatQuestionInput: 'input[placeholder="Type message here..."]',
+  // --- Phase 6: AI matching ---
+  jobDescription: '.styles_JDC__dang-inner-html__h0K4t, .dang-inner-html, section.job-desc, .styles_job-desc__',
 };
 
 export class NaukriAdapter extends JobPortalAdapter {
@@ -281,6 +283,25 @@ export class NaukriAdapter extends JobPortalAdapter {
 
     console.log('[naukri] Could not confirm the application succeeded — flagging for manual review.');
     return { status: 'needs_manual_review', reason: 'no success confirmation detected after apply' };
+  }
+
+  /**
+   * Fetches the full job description text for matching. Only called for
+   * jobs that already passed the cheap local pre-filter — full-page loads
+   * are the expensive step, so we don't do this for every discovered job.
+   * @param {object} job - needs `.url`
+   * @returns {Promise<string>} description text, or '' if not found
+   */
+  async fetchJobDescription(job) {
+    await this.page.goto(job.url, { waitUntil: 'domcontentloaded' });
+    await humanDelay();
+
+    const desc = this.page.locator(SELECTORS.jobDescription).first();
+    if (!(await desc.count())) {
+      console.warn(`[naukri] Could not find job description for "${job.title}" — selector may need updating.`);
+      return '';
+    }
+    return (await desc.textContent())?.trim() ?? '';
   }
 
   async close() {

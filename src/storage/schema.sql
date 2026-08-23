@@ -21,3 +21,22 @@ ALTER TABLE jobs ADD COLUMN IF NOT EXISTS application_status TEXT NOT NULL DEFAU
 ALTER TABLE jobs ADD COLUMN IF NOT EXISTS applied_at TIMESTAMPTZ;
 
 CREATE INDEX IF NOT EXISTS idx_jobs_application_status ON jobs (application_status);
+
+-- Phase 6: AI matching. Additive — safe to re-run.
+-- A "version" of the candidate's resume: re-parsing the same PDF (same
+-- hash) reuses the existing row instead of calling the LLM again.
+CREATE TABLE IF NOT EXISTS candidate_profiles (
+  id           SERIAL PRIMARY KEY,
+  resume_hash  TEXT NOT NULL UNIQUE,
+  profile      JSONB NOT NULL,
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+ALTER TABLE jobs ADD COLUMN IF NOT EXISTS description_text TEXT;
+ALTER TABLE jobs ADD COLUMN IF NOT EXISTS match_score NUMERIC;
+ALTER TABLE jobs ADD COLUMN IF NOT EXISTS match_reasoning TEXT;
+ALTER TABLE jobs ADD COLUMN IF NOT EXISTS matched_profile_id INTEGER REFERENCES candidate_profiles(id);
+ALTER TABLE jobs ADD COLUMN IF NOT EXISTS matched_at TIMESTAMPTZ;
+
+CREATE INDEX IF NOT EXISTS idx_jobs_match_score ON jobs (match_score);
+

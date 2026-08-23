@@ -66,6 +66,19 @@ export class JobStore {
     this._save();
   }
 
+  /**
+   * Phase 6 (AI matching) is Postgres-only — candidate profile versioning
+   * relies on a relational foreign key. Fails loudly rather than silently
+   * no-opping, so a JSON-backend user finds out immediately, not via
+   * missing match scores three runs later.
+   */
+  async updateJobMatch() {
+    throw new Error(
+      'AI matching requires STORAGE_BACKEND=postgres. The JSON file store ' +
+        "doesn't support candidate profile versioning."
+    );
+  }
+
   _save() {
     writeFileSync(this.filePath, JSON.stringify(this.all(), null, 2), 'utf-8');
   }

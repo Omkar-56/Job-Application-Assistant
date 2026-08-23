@@ -91,6 +91,23 @@ export class PostgresJobStore {
     );
   }
 
+  /**
+   * @param {string} portalJobId
+   * @param {{ descriptionText: string, score: number, reasoning: string, profileId: number }} match
+   */
+  async updateJobMatch(portalJobId, { descriptionText, score, reasoning, profileId }) {
+    await this.pool.query(
+      `UPDATE jobs
+       SET description_text = $1,
+           match_score = $2,
+           match_reasoning = $3,
+           matched_profile_id = $4,
+           matched_at = now()
+       WHERE portal = $5 AND portal_job_id = $6`,
+      [descriptionText, score, reasoning, profileId, this.portal, portalJobId]
+    );
+  }
+
   async close() {
     await this.pool.end();
   }
@@ -109,5 +126,10 @@ function rowToJob(row) {
     url: row.url,
     applicationStatus: row.application_status,
     appliedAt: row.applied_at,
+    descriptionText: row.description_text,
+    matchScore: row.match_score === null ? null : Number(row.match_score),
+    matchReasoning: row.match_reasoning,
+    matchedProfileId: row.matched_profile_id,
+    matchedAt: row.matched_at,
   };
 }
