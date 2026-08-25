@@ -221,6 +221,45 @@ something to over-engineer yet.
   the change (`New or changed resume detected`) rather than reusing the
   cached profile.
 
+## Phase 7: LLM answering recruiter chat questions
+
+Replaces the pause-and-wait behavior of `ManualAnswerStrategy` with
+`LLMAnswerStrategy`, which reads each question from the chat panel and
+answers it grounded in your candidate profile (built in Phase 6) — same
+`handleQuestions()` interface, so this is a config change, not a rewrite.
+
+**The safety flag you asked for:** `AUTO_CONFIRM_ANSWERS`, default `false`.
+With it off, every generated answer is printed to the terminal and paused
+for you: press Enter to send it as-is, type a replacement to send that
+instead, or type `skip` to abort that job (flags it `needs_manual_review`
+rather than sending a bad answer). Nothing reaches a real recruiter without
+you seeing it first, until you set it to `true`.
+
+**Other safety caps:** `maxQuestions` (8) stops a misdetected/looping
+conversation instead of answering forever, and the same panel-closed
+debounce from the Phase 4 bug fix is reused here so mid-conversation gaps
+between questions aren't mistaken for "done."
+
+**Setup:**
+
+1. Set `ANSWER_STRATEGY=llm` in `.env` (default is still `manual`).
+2. Run `npm run match` at least once first — `apply.js` reuses that same
+   cached candidate profile rather than re-parsing your resume.
+3. `npm run apply:headed` as usual. Leave `AUTO_CONFIRM_ANSWERS=false` for
+   your first several runs.
+
+**What to test:**
+
+- With `AUTO_CONFIRM_ANSWERS=false`: trigger a job with chat questions,
+  confirm you see each proposed answer and can accept/edit/skip it in the
+  terminal, and that it actually types your final choice (not the original
+  proposal) into the browser when you edit.
+- Try `skip` on one — confirm that job ends up `needs_manual_review`, not
+  `applied`.
+- Only once you trust the answers: set `AUTO_CONFIRM_ANSWERS=true` and
+  watch one run end-to-end without interrupting it, to confirm it still
+  behaves well unattended.
+
 ## What to test
 
 - Run once with your real search criteria and confirm the browser opens,
