@@ -33,6 +33,11 @@ const SELECTORS = {
   // The recruiter/Naukri chat panel seen in the screenshots — its text
   // input is the clearest, least-likely-to-change signal that it's open.
   chatQuestionInput: 'input[placeholder="Type message here..."]',
+  // Best-effort — the chat bubbles don't have a documented class name from
+  // the screenshots alone. This targets the last message bubble in the
+  // panel; if question reading comes back empty, inspect the panel with
+  // devtools and tighten this selector.
+  chatBotMessage: '[class*="bot"], [class*="message"]:not(input)',
   // --- Phase 6: AI matching ---
   jobDescription: '.styles_JDC__dang-inner-html__h0K4t, .dang-inner-html, section.job-desc, .styles_job-desc__',
 };
@@ -268,6 +273,8 @@ export class NaukriAdapter extends JobPortalAdapter {
       const result = await answerStrategy.handleQuestions({
         job,
         checkStillOpen: async () => (await this.page.locator(SELECTORS.chatQuestionInput).count()) > 0,
+        readCurrentQuestion: () => this._readCurrentQuestion(),
+        submitAnswer: (text) => this._submitAnswer(text),
       });
       if (!result.completed) {
         return { status: 'needs_manual_review', reason: result.reason || 'chat questions left unanswered' };
@@ -302,6 +309,27 @@ export class NaukriAdapter extends JobPortalAdapter {
       return '';
     }
     return (await desc.textContent())?.trim() ?? '';
+  }
+
+  /**
+   * Best-effort read of the most recent bot message in the chat panel —
+   * used by LLMAnswerStrategy to know what to answer. Falls back to '' if
+   * the selector doesn't match, which the strategy treats as "nothing new
+   * to answer yet."
+   */
+  async _readCurrentQuestion() {
+    const bubbles = this.page.locator(SELECTORS.chatBotMessage);
+    const count = await bubbles.count();
+    if (!count) return '';
+    return (await bubbles.nth(count - 1).textContent())?.trim() ?? '';
+  }
+
+  /** Types an answer into the chat input and submits it with Enter. */
+  async _submitAnswer(text) {
+    const input = this.page.locator(SELECTORS.chatQuestionInput).first();
+    await input.fill(text);
+    await humanDelay(400, 900);
+    await input.press('Enter');
   }
 
   async close() {

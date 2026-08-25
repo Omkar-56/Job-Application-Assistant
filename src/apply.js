@@ -1,11 +1,48 @@
+import { readFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { config } from './config/config.js';
 import { NaukriAdapter } from './adapters/naukri/naukriAdapter.js';
 import { createStore } from './storage/createStore.js';
+import { CandidateProfileStore } from './storage/candidateProfileStore.js';
 import { applyFilters } from './filters/ruleBasedFilter.js';
 import { ManualAnswerStrategy } from './apply/answerStrategies/ManualAnswerStrategy.js';
+import { LLMAnswerStrategy } from './apply/answerStrategies/LLMAnswerStrategy.js';
+
+async function createAnswerStrategy() {
+  if (config.apply.answerStrategy !== 'llm') {
+    console.log('[apply] Using manual answer strategy (ANSWER_STRATEGY=manual).');
+    return { strategy: new ManualAnswerStrategy({ headless: config.headless }), profileStore: null };
+  }
+
+  if (config.db.backend !== 'postgres') {
+    throw new Error('ANSWER_STRATEGY=llm requires STORAGE_BACKEND=postgres (candidate profiles are relational).');
+  }
+
+  const profileStore = new CandidateProfileStore(config.db.connectionString);
+  const resumeBuffer = readFileSync(config.matching.resumePath);
+  const resumeHash = createHash('sha256').update(resumeBuffer).digest('hex');
+  const profileRow = await profileStore.getByHash(resumeHash);
+  if (!profileRow) {
+    await profileStore.close();
+    throw new Error(
+      'No candidate profile found for the current resume. Run `npm run match` ' +
+        'first — it parses your resume once and this reuses that.'
+    );
+  }
+
+  console.log(
+    `[apply] Using LLM answer strategy (profile id ${profileRow.id}, ` +
+      `AUTO_CONFIRM_ANSWERS=${config.apply.autoConfirmAnswers}).`
+  );
+  const strategy = new LLMAnswerStrategy({
+    profile: profileRow.profile,
+    autoConfirm: config.apply.autoConfirmAnswers,
+  });
+  return { strategy, profileStore };
+}
 
 async function main() {
-  console.log('=== Job Application Assistant — Phase 4: Applying ===');
+  console.log('=== Job Application Assistant — Applying ===');
   console.log(`DRY_RUN: ${config.apply.dryRun}`);
   console.log(`Max applications this run: ${config.apply.maxPerRun}`);
   if (!config.apply.dryRun) {
@@ -24,7 +61,7 @@ async function main() {
   });
 
   const store = createStore(config, 'naukri');
-  const answerStrategy = new ManualAnswerStrategy({ headless: config.headless });
+  const { strategy: answerStrategy, profileStore } = await createAnswerStrategy();
 
   const tally = { applied: 0, dry_run: 0, needs_manual_review: 0, failed: 0 };
 
@@ -72,6 +109,7 @@ async function main() {
   } finally {
     await adapter.close();
     await store.close();
+    if (profileStore) await profileStore.close();
   }
 }
 

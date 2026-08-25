@@ -36,6 +36,13 @@ export const config = {
     // explicitly set to "false" in .env.
     dryRun: (process.env.DRY_RUN ?? 'true').toLowerCase() !== 'false',
     maxPerRun: Number(process.env.MAX_APPLICATIONS_PER_RUN ?? 5),
+    // 'manual' (default — pause and wait for you to type answers) or 'llm'
+    // (Phase 7 — answer automatically using your candidate profile).
+    answerStrategy: (process.env.ANSWER_STRATEGY || 'manual').toLowerCase(),
+    // Only used when answerStrategy is 'llm'. false (default) = show every
+    // generated answer in the terminal and wait for you to confirm/edit/
+    // skip before it's actually sent. true = send immediately, no pause.
+    autoConfirmAnswers: (process.env.AUTO_CONFIRM_ANSWERS ?? 'false').toLowerCase() === 'true',
   },
   matching: {
     resumePath: path.join(__dirname, '..', '..', process.env.RESUME_PATH || 'resume.pdf'),
