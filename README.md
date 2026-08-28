@@ -283,6 +283,43 @@ no job touched.
   same list, then try answering `n` and confirm nothing gets clicked
   (check `application_status` in the DB is unchanged after).
 
+## Two more apply-flow cases (resume upload chip, external apply)
+
+On top of the direct-apply and chat-question flows from Phase 4, Naukri has
+two more cases:
+
+- **"Upload Resume" quick-reply chip** — instead of a typed question, the
+  chat sometimes shows two buttons: "Upload Resume" / "I'll do it later".
+  This is handled automatically and transparently, regardless of which
+  answer strategy (`manual` or `llm`) is active — it's a deterministic file
+  upload, not a judgment call, so neither strategy needs to know it exists.
+  It clicks "Upload Resume" and uploads `RESUME_PATH` (the same resume
+  already used for matching) via Playwright's native file-chooser handling.
+- **"Apply on company site"** — Naukri redirects to the company's own
+  application form for some listings. This is intentionally **never
+  automated** — every company's site is different and unpredictable, and
+  attempting to script arbitrary third-party forms is exactly the kind of
+  fragile, unmaintainable automation this project avoids. These jobs are
+  flagged with `application_status = 'external_site'` and skipped; the
+  end-of-run summary tells you how many need manual attention.
+
+**A caveat on testing:** the file-upload piece (`waitForEvent('filechooser')`
++ `setFiles()`) uses the standard, documented Playwright pattern for native
+file dialogs, and the surrounding control flow is unit-tested with a mocked
+browser page — but it hasn't been exercised against the real Naukri site
+yet. Worth watching closely on your first real run.
+
+**What to test:**
+
+- Trigger a job that shows the resume-upload chip (like your screenshot) —
+  confirm it uploads automatically without pausing, and that the chat
+  advances afterward (check for a confirmation message or the panel
+  closing).
+- Trigger a job with "Apply on company site" — confirm it's skipped
+  immediately with `external_site` status and nothing gets clicked.
+  `psql $DATABASE_URL -c "select title, company, url from jobs where application_status = 'external_site';"`
+  to see which ones need manual attention.
+
 ## What to test
 
 - Run once with your real search criteria and confirm the browser opens,
