@@ -14,8 +14,12 @@ cp .env.example .env
 ```
 
 Edit `src/config/searchCriteria.json` for your search (keywords, location,
-experience). Leave `NAUKRI_EMAIL`/`NAUKRI_PASSWORD` in `.env` blank if you'd
-rather log in manually — the browser will open, pause, and wait for you.
+experience). `MAX_PAGES` in `.env` controls pagination — it's the only
+place page count is configured (an earlier version also had a `maxPages`
+field in `searchCriteria.json` that silently overrode it; that's removed
+now, so `.env` is the single source of truth). Leave `NAUKRI_EMAIL`/
+`NAUKRI_PASSWORD` in `.env` blank if you'd rather log in manually — the
+browser will open, pause, and wait for you.
 
 ## Run
 
@@ -259,6 +263,25 @@ between questions aren't mistaken for "done."
 - Only once you trust the answers: set `AUTO_CONFIRM_ANSWERS=true` and
   watch one run end-to-end without interrupting it, to confirm it still
   behaves well unattended.
+
+## Phase 8: batch review before real submission
+
+Before touching any job, `apply.js` now prints the full list about to be
+attempted this run (title, company, match score, experience). When
+`DRY_RUN=true`, it proceeds automatically — nothing's actually submitted,
+so there's nothing to gate. When `DRY_RUN=false`, it pauses for one
+whole-batch confirm (`[y/N]`, defaults to no) before anything is clicked —
+a last checkpoint separate from the per-answer confirm in
+`LLMAnswerStrategy`. Answering anything other than `y` aborts the run with
+no job touched.
+
+**What to test:**
+
+- `DRY_RUN=true npm run apply:headed` — confirm it prints the batch list
+  and proceeds without asking.
+- `DRY_RUN=false npm run apply:headed` — confirm it pauses and shows the
+  same list, then try answering `n` and confirm nothing gets clicked
+  (check `application_status` in the DB is unchanged after).
 
 ## What to test
 

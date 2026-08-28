@@ -7,6 +7,7 @@ import { CandidateProfileStore } from './storage/candidateProfileStore.js';
 import { applyFilters } from './filters/ruleBasedFilter.js';
 import { ManualAnswerStrategy } from './apply/answerStrategies/ManualAnswerStrategy.js';
 import { LLMAnswerStrategy } from './apply/answerStrategies/LLMAnswerStrategy.js';
+import { reviewBatch } from './apply/batchReview.js';
 
 async function createAnswerStrategy() {
   if (config.apply.answerStrategy !== 'llm') {
@@ -87,11 +88,21 @@ async function main() {
       );
     }
 
-    for (const job of batch) {
-      const result = await adapter.applyToJob(job, { dryRun: config.apply.dryRun, answerStrategy });
-      await store.updateApplicationStatus(job.portalJobId, result.status);
-      tally[result.status] = (tally[result.status] ?? 0) + 1;
-      console.log(`[apply] "${job.title}" — ${job.company} → ${result.status}${result.reason ? ` (${result.reason})` : ''}`);
+    if (batch.length === 0) {
+      console.log('[apply] Nothing to apply to this run.');
+    } else {
+      const proceed = await reviewBatch(batch, { dryRun: config.apply.dryRun });
+      if (!proceed) {
+        console.log('[apply] Aborted at batch review — no jobs were touched.');
+        return;
+      }
+
+      for (const job of batch) {
+        const result = await adapter.applyToJob(job, { dryRun: config.apply.dryRun, answerStrategy });
+        await store.updateApplicationStatus(job.portalJobId, result.status);
+        tally[result.status] = (tally[result.status] ?? 0) + 1;
+        console.log(`[apply] "${job.title}" — ${job.company} → ${result.status}${result.reason ? ` (${result.reason})` : ''}`);
+      }
     }
 
     console.log('\n=== Summary ===');

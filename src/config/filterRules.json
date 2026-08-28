@@ -1,6 +1,6 @@
 {
-  "includeKeywords": ["node", "node.js", "express", "backend", "mern", "fresher", "freshers"],
-  "excludeKeywords": [],
+  "includeKeywords": ["node", "node.js", "express", "backend", "mern"],
+  "excludeKeywords": ["only fresher", "internship", "trainee"],
   "experience": { "min": 0, "max": 3 },
   "onUnknownExperience": "include"
 }

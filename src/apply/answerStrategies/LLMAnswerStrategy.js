@@ -38,6 +38,7 @@ export class LLMAnswerStrategy extends AnswerStrategy {
   async handleQuestions({ job, checkStillOpen, readCurrentQuestion, submitAnswer }) {
     const start = Date.now();
     let lastQuestion = null;
+    let lastSubmittedAnswer = null;
     let answered = 0;
 
     while (Date.now() - start < this.timeoutMs) {
@@ -62,9 +63,10 @@ export class LLMAnswerStrategy extends AnswerStrategy {
       }
 
       const question = await readCurrentQuestion();
-      if (!question || question === lastQuestion) {
-        // Either nothing rendered yet, or we're still looking at the
-        // question we already answered while the UI catches up.
+      // The message list likely includes our own messages too, so right
+      // after submitting, the "latest message" is briefly our own echoed
+      // answer, not the bot's next question — skip re-answering it.
+      if (!question || question === lastQuestion || question === lastSubmittedAnswer) {
         await sleep(800);
         continue;
       }
@@ -88,6 +90,7 @@ export class LLMAnswerStrategy extends AnswerStrategy {
 
       await submitAnswer(finalAnswer);
       lastQuestion = question;
+      lastSubmittedAnswer = finalAnswer;
       answered++;
 
       // Give the UI a moment to advance to the next question (or close)
