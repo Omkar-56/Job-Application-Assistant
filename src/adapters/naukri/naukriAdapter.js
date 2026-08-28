@@ -30,14 +30,14 @@ const SELECTORS = {
   // --- Phase 4: apply flow ---
   applyButton: 'button:text-is("Apply"), #apply-button',
   appliedMarker: 'button:text-is("Applied")',
-  // The recruiter/Naukri chat panel seen in the screenshots — its text
-  // input is the clearest, least-likely-to-change signal that it's open.
-  chatQuestionInput: 'input[placeholder="Type message here..."]',
-  // Best-effort — the chat bubbles don't have a documented class name from
-  // the screenshots alone. This targets the last message bubble in the
-  // panel; if question reading comes back empty, inspect the panel with
-  // devtools and tighten this selector.
-  chatBotMessage: '[class*="bot"], [class*="message"]:not(input)',
+  // The chat input is a contenteditable div, NOT an <input> — confirmed
+  // via DevTools: <div contenteditable="true" data-placeholder="Type
+  // message here...">. The old input[placeholder=...] selector matched
+  // zero elements, which is why nothing ever got typed.
+  chatQuestionInput: '[contenteditable="true"][data-placeholder="Type message here..."]',
+  // Scoped to the actual message list (ul[id^="chatList_"]) instead of a
+  // broad class-substring guess — each message is an <li>.
+  chatBotMessage: 'ul[id^="chatList_"] li',
   // --- Phase 6: AI matching ---
   jobDescription: '.styles_JDC__dang-inner-html__h0K4t, .dang-inner-html, section.job-desc, .styles_job-desc__',
 };
@@ -272,7 +272,8 @@ export class NaukriAdapter extends JobPortalAdapter {
       console.log('[naukri] Recruiter questions popped up — handing off to answer strategy.');
       const result = await answerStrategy.handleQuestions({
         job,
-        checkStillOpen: async () => (await this.page.locator(SELECTORS.chatQuestionInput).count()) > 0,
+        checkStillOpen: async () =>
+          this.page.locator(SELECTORS.chatQuestionInput).first().isVisible().catch(() => false),
         readCurrentQuestion: () => this._readCurrentQuestion(),
         submitAnswer: (text) => this._submitAnswer(text),
       });
@@ -327,7 +328,11 @@ export class NaukriAdapter extends JobPortalAdapter {
   /** Types an answer into the chat input and submits it with Enter. */
   async _submitAnswer(text) {
     const input = this.page.locator(SELECTORS.chatQuestionInput).first();
-    await input.fill(text);
+    await input.click();
+    // .fill() writes the DOM directly, which React-controlled contenteditable
+    // elements often don't register as a real change. Simulating actual
+    // keystrokes is more reliable here.
+    await this.page.keyboard.type(text, { delay: 15 });
     await humanDelay(400, 900);
     await input.press('Enter');
   }
