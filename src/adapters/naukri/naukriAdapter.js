@@ -30,6 +30,10 @@ const SELECTORS = {
   // --- Phase 4: apply flow ---
   applyButton: 'button:text-is("Apply"), #apply-button',
   appliedMarker: 'button:text-is("Applied")',
+  // Naukri sometimes redirects to the company's own site instead of a
+  // native apply — different button text, easy to tell apart from the
+  // regular Apply button.
+  externalApplyButton: 'button:has-text("Apply on company site"), a:has-text("Apply on company site")',
   // The chat input is a contenteditable div, NOT an <input> — confirmed
   // via DevTools: <div contenteditable="true" data-placeholder="Type
   // message here...">. The old input[placeholder=...] selector matched
@@ -38,16 +42,21 @@ const SELECTORS = {
   // Scoped to the actual message list (ul[id^="chatList_"]) instead of a
   // broad class-substring guess — each message is an <li>.
   chatBotMessage: 'ul[id^="chatList_"] li',
+  // Quick-reply buttons the chat sometimes shows instead of a free-text
+  // question — e.g. "Upload Resume" / "I'll do it later", confirmed via
+  // DevTools: <div class="chatbot_Chip chipInRow chipItem"><span>...</span></div>
+  chatChip: '.chatbot_Chip.chipItem, [class*="chatbot_Chip"]',
   // --- Phase 6: AI matching ---
   jobDescription: '.styles_JDC__dang-inner-html__h0K4t, .dang-inner-html, section.job-desc, .styles_job-desc__',
 };
 
 export class NaukriAdapter extends JobPortalAdapter {
-  constructor({ headless, storageStatePath, credentials }) {
+  constructor({ headless, storageStatePath, credentials, resumePath }) {
     super();
     this.headless = headless;
     this.storageStatePath = storageStatePath;
     this.credentials = credentials; // { email, password } — may be null
+    this.resumePath = resumePath; // used for automated resume-upload chip handling
     this.browser = null;
     this.context = null;
     this.page = null;
@@ -223,18 +232,29 @@ export class NaukriAdapter extends JobPortalAdapter {
 
   /**
    * Opens a job page and applies to it — or, in dry-run mode, just reports
-   * what it would have done. Detects the two flows you found in Naukri's
-   * UI: a direct apply (button click is enough) and a chat-style
-   * recruiter-questions panel (handed off to answerStrategy).
+   * what it would have done. Handles the flows found in Naukri's UI: a
+   * direct apply, a chat-style recruiter-questions panel (handed off to
+   * answerStrategy), a chat "Upload Resume" quick-reply chip (handled
+   * automatically — deterministic, no LLM/human judgment needed), and an
+   * "Apply on company site" redirect (flagged, not attempted — see the
+   * class doc for why that one isn't automated).
    *
    * @param {object} job - a job object from discover()/the store, needs `.url`
    * @param {{ dryRun: boolean, answerStrategy: import('../../apply/answerStrategies/AnswerStrategy.js').AnswerStrategy }} opts
-   * @returns {Promise<{ status: 'applied'|'dry_run'|'needs_manual_review'|'failed', reason?: string }>}
+   * @returns {Promise<{ status: 'applied'|'dry_run'|'needs_manual_review'|'external_site'|'failed', reason?: string }>}
    */
   async applyToJob(job, { dryRun = true, answerStrategy } = {}) {
     console.log(`\n[naukri] Opening job: ${job.title} — ${job.company}`);
     await this.page.goto(job.url, { waitUntil: 'domcontentloaded' });
     await humanDelay();
+
+    // "Apply on company site" leads to an arbitrary external site — every
+    // company's application form is different and unpredictable, so this
+    // is intentionally never automated. Flag it and move on.
+    if (await this.page.locator(SELECTORS.externalApplyButton).count()) {
+      console.log(`[naukri] "${job.title}" requires applying on the company's own site — flagging for manual application.`);
+      return { status: 'external_site', reason: "Naukri redirects to the company's own site for this listing" };
+    }
 
     const applyBtn = this.page.locator(SELECTORS.applyButton).first();
     if (!(await applyBtn.count())) {
@@ -270,10 +290,20 @@ export class NaukriAdapter extends JobPortalAdapter {
 
     if (chatVisible) {
       console.log('[naukri] Recruiter questions popped up — handing off to answer strategy.');
+      // Resolve any resume-upload chip up front too — it can be the very
+      // first thing the chat shows, before checkStillOpen's first poll.
+      await this._autoHandleResumeUploadChip();
       const result = await answerStrategy.handleQuestions({
         job,
-        checkStillOpen: async () =>
-          this.page.locator(SELECTORS.chatQuestionInput).first().isVisible().catch(() => false),
+        checkStillOpen: async () => {
+          // Auto-handle the "Upload Resume" quick-reply chip transparently,
+          // regardless of which answer strategy is active — it's a
+          // deterministic file upload, not something that needs an LLM's
+          // or a human's judgment. Neither ManualAnswerStrategy nor
+          // LLMAnswerStrategy need to know this exists.
+          await this._autoHandleResumeUploadChip();
+          return this.page.locator(SELECTORS.chatQuestionInput).first().isVisible().catch(() => false);
+        },
         readCurrentQuestion: () => this._readCurrentQuestion(),
         submitAnswer: (text) => this._submitAnswer(text),
       });
@@ -310,6 +340,43 @@ export class NaukriAdapter extends JobPortalAdapter {
       return '';
     }
     return (await desc.textContent())?.trim() ?? '';
+  }
+
+  /**
+   * Detects the "Upload Resume" / "I'll do it later" quick-reply chips
+   * (seen when the recruiter's chat wants a resume rather than a typed
+   * answer) and, if present, clicks "Upload Resume" and uploads
+   * this.resumePath automatically — this is a deterministic action, not
+   * something that needs an LLM's or a human's judgment, so it's handled
+   * transparently regardless of which answer strategy is active.
+   * @returns {Promise<boolean>} true if it found and handled the chip
+   */
+  async _autoHandleResumeUploadChip() {
+    if (!this.resumePath) return false; // nothing to upload — leave it for manual review
+
+    const uploadChip = this.page
+      .locator(SELECTORS.chatChip)
+      .filter({ hasText: /^upload resume$/i })
+      .first();
+
+    if (!(await uploadChip.count()) || !(await uploadChip.isVisible().catch(() => false))) {
+      return false;
+    }
+
+    console.log('[naukri] Chat requested a resume upload — uploading automatically.');
+    try {
+      const [fileChooser] = await Promise.all([
+        this.page.waitForEvent('filechooser', { timeout: 10_000 }),
+        uploadChip.click(),
+      ]);
+      await fileChooser.setFiles(this.resumePath);
+      await humanDelay(1500, 2500);
+      console.log('[naukri] Resume uploaded.');
+      return true;
+    } catch (err) {
+      console.warn(`[naukri] Found the resume-upload chip but the upload failed: ${err.message}`);
+      return false;
+    }
   }
 
   /**
