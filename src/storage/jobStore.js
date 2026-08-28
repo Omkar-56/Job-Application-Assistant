@@ -55,7 +55,7 @@ export class JobStore {
 
   /**
    * @param {string} portalJobId
-   * @param {'discovered'|'dry_run'|'applied'|'needs_manual_review'|'failed'} status
+   * @param {'discovered'|'dry_run'|'applied'|'needs_manual_review'|'external_site'|'failed'} status
    */
   updateApplicationStatus(portalJobId, status) {
     if (!this._loaded) this.load();

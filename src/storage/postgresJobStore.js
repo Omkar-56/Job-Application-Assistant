@@ -79,7 +79,7 @@ export class PostgresJobStore {
 
   /**
    * @param {string} portalJobId
-   * @param {'discovered'|'dry_run'|'applied'|'needs_manual_review'|'failed'} status
+   * @param {'discovered'|'dry_run'|'applied'|'needs_manual_review'|'external_site'|'failed'} status
    */
   async updateApplicationStatus(portalJobId, status) {
     await this.pool.query(

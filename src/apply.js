@@ -59,12 +59,13 @@ async function main() {
     credentials: config.naukri.email && config.naukri.password
       ? { email: config.naukri.email, password: config.naukri.password }
       : null,
+    resumePath: config.matching.resumePath,
   });
 
   const store = createStore(config, 'naukri');
   const { strategy: answerStrategy, profileStore } = await createAnswerStrategy();
 
-  const tally = { applied: 0, dry_run: 0, needs_manual_review: 0, failed: 0 };
+  const tally = { applied: 0, dry_run: 0, needs_manual_review: 0, external_site: 0, failed: 0 };
 
   try {
     await adapter.login();
@@ -109,12 +110,19 @@ async function main() {
     console.log(`Applied: ${tally.applied}`);
     console.log(`Dry-run (not actually submitted): ${tally.dry_run}`);
     console.log(`Needs manual review: ${tally.needs_manual_review}`);
+    console.log(`Requires applying on company site (not automated): ${tally.external_site}`);
     console.log(`Failed: ${tally.failed}`);
     if (tally.needs_manual_review > 0) {
       console.log(
         '\nSome jobs need manual review — either the recruiter questions ' +
           'timed out, or the run was headless. Set HEADLESS=false and re-run ' +
           'to handle them by hand for now.'
+      );
+    }
+    if (tally.external_site > 0) {
+      console.log(
+        `\n${tally.external_site} job(s) redirect to the company's own site — ` +
+          'check application_status = \'external_site\' in the DB and apply to those by hand.'
       );
     }
   } finally {

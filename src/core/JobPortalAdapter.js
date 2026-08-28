@@ -34,7 +34,7 @@ export class JobPortalAdapter {
    * Applies to a single job (or, in dry-run mode, reports what it would do).
    * @param {object} job
    * @param {{ dryRun: boolean, answerStrategy: object }} opts
-   * @returns {Promise<{ status: 'applied'|'dry_run'|'needs_manual_review'|'failed', reason?: string }>}
+   * @returns {Promise<{ status: 'applied'|'dry_run'|'needs_manual_review'|'external_site'|'failed', reason?: string }>}
    */
   async applyToJob(job, opts) {
     throw new Error('applyToJob() not implemented');
