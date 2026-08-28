@@ -22,7 +22,7 @@ async function main() {
 
   try {
     await adapter.login();
-    const discovered = await adapter.discover(config.search);
+    const discovered = await adapter.discover({ ...config.search, maxPages: config.maxPages });
     console.log(`\n[result] Discovered ${discovered.length} jobs this run.`);
 
     // addMany/all work whether the store is sync (JSON) or async (Postgres)

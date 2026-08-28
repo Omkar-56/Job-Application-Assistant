@@ -1,5 +1,5 @@
 {
-  "includeKeywords": ["node", "node.js", "express", "backend", "mern"],
+  "includeKeywords": ["node", "node.js", "express", "backend", "mern", "fresher", "freshers"],
   "excludeKeywords": [],
   "experience": { "min": 0, "max": 3 },
   "onUnknownExperience": "include"
