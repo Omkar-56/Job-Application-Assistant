@@ -16,12 +16,22 @@ export class AnswerStrategy {
    *   the latest question text from the panel, or null if none visible.
    *   Only used by strategies that actually read questions (e.g. an LLM
    *   strategy) — ManualAnswerStrategy ignores it.
-   * @param {(text: string) => Promise<void>} args.submitAnswer - types and
-   *   submits an answer into the panel. Also only used by strategies that
-   *   answer directly.
+   * @param {(text: string) => Promise<{ submittedText: string, truncated: boolean }>} args.typeAnswer -
+   *   types a free-text answer WITHOUT submitting it, and reports what
+   *   actually landed. There's no maxlength attribute to check ahead of
+   *   time, so truncation is only detectable after typing — callers should
+   *   retry with a shorter answer before calling confirmSubmit(), so a
+   *   truncated/garbled answer never reaches a real recruiter.
+   * @param {() => Promise<void>} args.confirmSubmit - submits whatever is
+   *   currently typed into the input.
+   * @param {() => Promise<{ question: string, options: string[] } | null>} [args.readOptionQuestion] -
+   *   for single-select (radio/dropdown) questions instead of free text.
+   *   Returns null when the current question isn't this shape.
+   * @param {(optionText: string) => Promise<boolean>} [args.selectOption] -
+   *   selects one of the options readOptionQuestion() returned, verbatim.
    * @returns {Promise<{ completed: boolean, reason?: string }>}
    */
-  async handleQuestions({ job, checkStillOpen, readCurrentQuestion, submitAnswer }) {
+  async handleQuestions({ job, checkStillOpen, readCurrentQuestion, typeAnswer, confirmSubmit, readOptionQuestion, selectOption }) {
     throw new Error('handleQuestions() not implemented');
   }
 }
