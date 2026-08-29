@@ -320,6 +320,46 @@ yet. Worth watching closely on your first real run.
   `psql $DATABASE_URL -c "select title, company, url from jobs where application_status = 'external_site';"`
   to see which ones need manual attention.
 
+## Character limits and other question types (radio/dropdown)
+
+Two gaps closed, both specific to `ANSWER_STRATEGY=llm` — manual mode
+already handles any question shape since a human sees the real browser.
+
+**Character limits:** Naukri's chat input has no `maxlength` attribute to
+check ahead of time (it's a contenteditable box, and the cap varies per
+job) — so the approach is to type the answer, read back what actually
+landed, and if it's shorter than what was typed, regenerate a tighter
+version and retry. Bounded to `maxTruncationRetries` (2 by default); if it
+still doesn't fit, the job is flagged `needs_manual_review` rather than
+sending a cut-off answer. Critically, nothing is ever submitted mid-retry —
+typing and submitting are separate steps, so a truncated draft never
+reaches a real recruiter while a shorter version is generated.
+
+**Single-select questions (radio buttons — notice period, location,
+etc.):** a fundamentally different UI from free text, so it's detected and
+handled separately. The LLM is given the *exact* option strings from the
+page and constrained (via the API's schema `enum`) to pick only one of
+them verbatim — it cannot hallucinate an option that isn't actually
+clickable. If you edit a proposed choice during confirmation and your edit
+isn't one of the real options, it falls back to the model's original valid
+choice rather than trying to click something nonexistent.
+
+**On "is there a general way to handle any question":** partially. There's
+a general *pattern* — for any question shape, figure out what the UI
+actually accepts (free text with a length budget, or exactly one of N
+options) and constrain the LLM to that shape — but each genuinely new UI
+shape (dropdown `<select>`, multi-select checkboxes, date pickers, etc.)
+still needs its own detection/interaction code written once, following
+that same pattern. Anything not yet recognized safely times out into
+`needs_manual_review` rather than being guessed at.
+
+**Testing caveat:** the truncation-retry and option-selection *logic* is
+unit-tested against a mocked browser (retry-until-fit, refuses to submit a
+still-truncated answer, correctly falls back on an invalid edited option) —
+but like the resume-upload chip, the actual Naukri selectors involved
+(`.singleselect-radiobutton`, etc.) haven't been exercised against the real
+site yet. Watch closely on your first real run with each question type.
+
 ## What to test
 
 - Run once with your real search criteria and confirm the browser opens,

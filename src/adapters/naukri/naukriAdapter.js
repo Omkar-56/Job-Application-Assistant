@@ -46,6 +46,13 @@ const SELECTORS = {
   // question — e.g. "Upload Resume" / "I'll do it later", confirmed via
   // DevTools: <div class="chatbot_Chip chipInRow chipItem"><span>...</span></div>
   chatChip: '.chatbot_Chip.chipItem, [class*="chatbot_Chip"]',
+  // Single-select radio question (e.g. notice period, location) — confirmed
+  // via DevTools: <div class="singleselect-radiobutton">...
+  // <div class="ssrc__radio-btn-container"><input type="radio" ...><label>...
+  radioQuestionContainer: '.singleselect-radiobutton',
+  radioOption: '.ssrc__radio-btn-container',
+  radioOptionInput: '.ssrc__radio-btn-container input[type="radio"]',
+  radioOptionLabel: '.ssrc__radio-btn-container label',
   // --- Phase 6: AI matching ---
   jobDescription: '.styles_JDC__dang-inner-html__h0K4t, .dang-inner-html, section.job-desc, .styles_job-desc__',
 };
@@ -305,7 +312,10 @@ export class NaukriAdapter extends JobPortalAdapter {
           return this.page.locator(SELECTORS.chatQuestionInput).first().isVisible().catch(() => false);
         },
         readCurrentQuestion: () => this._readCurrentQuestion(),
-        submitAnswer: (text) => this._submitAnswer(text),
+        typeAnswer: (text) => this._typeAnswer(text),
+        confirmSubmit: () => this._confirmSubmit(),
+        readOptionQuestion: () => this.readOptionQuestion(),
+        selectOption: (optionText) => this.selectOption(optionText),
       });
       if (!result.completed) {
         return { status: 'needs_manual_review', reason: result.reason || 'chat questions left unanswered' };
@@ -380,6 +390,97 @@ export class NaukriAdapter extends JobPortalAdapter {
   }
 
   /**
+   * Types an answer into the chat input WITHOUT submitting it, and reports
+   * what actually landed. There's no maxlength attribute to check ahead of
+   * time (it's a contenteditable div, cap varies per job) — so truncation
+   * is only detectable after typing. Deliberately does not press Enter:
+   * callers should retry with a shorter answer on truncation, then call
+   * _confirmSubmit() only once satisfied — sending a garbled truncated
+   * answer to a real recruiter is worse than a slightly slower retry.
+   * @returns {Promise<{ submittedText: string, truncated: boolean }>}
+   */
+  async _typeAnswer(text) {
+    const input = this.page.locator(SELECTORS.chatQuestionInput).first();
+    await input.click();
+    await this.page.keyboard.press('Control+A');
+    await this.page.keyboard.press('Backspace');
+    // .fill() writes the DOM directly, which React-controlled contenteditable
+    // elements often don't register as a real change. Simulating actual
+    // keystrokes is more reliable here.
+    await this.page.keyboard.type(text, { delay: 15 });
+    await humanDelay(400, 900);
+
+    const submittedText = (await input.textContent())?.trim() ?? '';
+    const truncated = submittedText.length < text.trim().length;
+    if (truncated) {
+      console.warn(
+        `[naukri] Input appears to cap length: typed ${text.trim().length} chars, ` +
+          `only ${submittedText.length} landed in the box.`
+      );
+    }
+    return { submittedText, truncated };
+  }
+
+  /** Submits whatever is currently in the chat input. */
+  async _confirmSubmit() {
+    await this.page.locator(SELECTORS.chatQuestionInput).first().press('Enter');
+  }
+
+  /**
+   * Detects a single-select radio question (e.g. notice period, location)
+   * — a different UI shape from the free-text chat input. Returns null if
+   * one isn't currently showing, so callers can fall through to the
+   * free-text flow.
+   * @returns {Promise<{ question: string, options: string[] } | null>}
+   */
+  async readOptionQuestion() {
+    const container = this.page.locator(SELECTORS.radioQuestionContainer).first();
+    if (!(await container.count()) || !(await container.isVisible().catch(() => false))) {
+      return null;
+    }
+
+    const question = await this._readCurrentQuestion();
+    const labels = this.page.locator(SELECTORS.radioOptionLabel);
+    const count = await labels.count();
+    const options = [];
+    for (let i = 0; i < count; i++) {
+      const text = (await labels.nth(i).textContent())?.trim();
+      // "Skip this question" is a real option but not one we want the LLM
+      // choosing by default — only offer it if there's genuinely nothing
+      // better, by leaving it out of the choice set entirely for now.
+      if (text && !/^skip this question$/i.test(text)) options.push(text);
+    }
+    if (!options.length) return null;
+    return { question, options };
+  }
+
+  /**
+   * Clicks the radio option matching the given label text (must be one of
+   * the strings readOptionQuestion() returned) and submits it.
+   */
+  async selectOption(optionText) {
+    const options = this.page.locator(SELECTORS.radioOption);
+    const count = await options.count();
+    for (let i = 0; i < count; i++) {
+      const label = (await options.nth(i).locator('label').textContent())?.trim();
+      if (label === optionText) {
+        await options.nth(i).locator('input[type="radio"]').click();
+        await humanDelay(400, 800);
+        // Selecting a radio may auto-advance the chat, or may need an
+        // explicit Save click — try both, harmlessly, since clicking a
+        // Save button that isn't there or is a no-op is safe.
+        const saveBtn = this.page.locator('button:text-is("Save")').first();
+        if ((await saveBtn.count()) && (await saveBtn.isEnabled().catch(() => false))) {
+          await saveBtn.click();
+        }
+        return true;
+      }
+    }
+    console.warn(`[naukri] Could not find a radio option matching "${optionText}" to click.`);
+    return false;
+  }
+
+  /**
    * Best-effort read of the most recent bot message in the chat panel —
    * used by LLMAnswerStrategy to know what to answer. Falls back to '' if
    * the selector doesn't match, which the strategy treats as "nothing new
@@ -390,18 +491,6 @@ export class NaukriAdapter extends JobPortalAdapter {
     const count = await bubbles.count();
     if (!count) return '';
     return (await bubbles.nth(count - 1).textContent())?.trim() ?? '';
-  }
-
-  /** Types an answer into the chat input and submits it with Enter. */
-  async _submitAnswer(text) {
-    const input = this.page.locator(SELECTORS.chatQuestionInput).first();
-    await input.click();
-    // .fill() writes the DOM directly, which React-controlled contenteditable
-    // elements often don't register as a real change. Simulating actual
-    // keystrokes is more reliable here.
-    await this.page.keyboard.type(text, { delay: 15 });
-    await humanDelay(400, 900);
-    await input.press('Enter');
   }
 
   async close() {
