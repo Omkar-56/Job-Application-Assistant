@@ -43,7 +43,17 @@ export class LLMAnswerStrategy extends AnswerStrategy {
     this.generate = generate;
   }
 
-  async handleQuestions({ job, checkStillOpen, readCurrentQuestion, typeAnswer, confirmSubmit, readOptionQuestion, selectOption }) {
+  async handleQuestions({
+    job,
+    checkStillOpen,
+    readCurrentQuestion,
+    typeAnswer,
+    confirmSubmit,
+    readOptionQuestion,
+    selectOption,
+    readChipQuestion,
+    selectChip,
+  }) {
     const start = Date.now();
     let lastQuestion = null;
     let lastSubmittedAnswer = null;
@@ -70,21 +80,31 @@ export class LLMAnswerStrategy extends AnswerStrategy {
         return { completed: false, reason: `exceeded max questions (${this.maxQuestions})` };
       }
 
-      // Try the single-select shape first — it's a different UI entirely
-      // from the free-text chat input, not something readCurrentQuestion
-      // would find.
-      if (readOptionQuestion && selectOption) {
-        const optionQ = await readOptionQuestion();
-        if (optionQ && optionQ.question !== lastQuestion) {
-          const outcome = await this._answerOptionQuestion(optionQ, { job, selectOption });
+      // Try both non-text shapes before falling back to free text — radio
+      // buttons and chip choices are different UI entirely from the chat
+      // input, not something readCurrentQuestion would find.
+      const choiceSources = [
+        readOptionQuestion && selectOption ? { read: readOptionQuestion, select: selectOption } : null,
+        readChipQuestion && selectChip ? { read: readChipQuestion, select: selectChip } : null,
+      ].filter(Boolean);
+
+      let handledChoice = false;
+      for (const { read, select } of choiceSources) {
+        const choiceQ = await read();
+        if (choiceQ && choiceQ.question !== lastQuestion) {
+          const outcome = await this._answerChoiceQuestion(choiceQ, { job, selectFn: select });
           if (outcome.skipped) {
             return { completed: false, reason: outcome.reason };
           }
-          lastQuestion = optionQ.question;
+          lastQuestion = choiceQ.question;
           answered++;
-          await sleep(1500);
-          continue;
+          handledChoice = true;
+          break;
         }
+      }
+      if (handledChoice) {
+        await sleep(1500);
+        continue;
       }
 
       const question = await readCurrentQuestion();
@@ -151,18 +171,18 @@ export class LLMAnswerStrategy extends AnswerStrategy {
     return { skipped: false, submittedText };
   }
 
-  /** Picks a constrained choice, confirms, and selects it. */
-  async _answerOptionQuestion(optionQ, { job, selectOption }) {
-    console.log(`[llm-answer] Q (choice): ${optionQ.question}`);
-    console.log(`[llm-answer] Options: ${optionQ.options.join(', ')}`);
+  /** Picks a constrained choice, confirms, and selects it (works for both radio and chip questions). */
+  async _answerChoiceQuestion(choiceQ, { job, selectFn }) {
+    console.log(`[llm-answer] Q (choice): ${choiceQ.question}`);
+    console.log(`[llm-answer] Options: ${choiceQ.options.join(', ')}`);
     const proposed = await chooseOption(
-      { question: optionQ.question, options: optionQ.options, job, profile: this.profile },
+      { question: choiceQ.question, options: choiceQ.options, job, profile: this.profile },
       { generate: this.generate }
     );
 
     let finalChoice = proposed;
     if (!this.autoConfirm) {
-      const response = await confirmAnswer(optionQ.question, proposed);
+      const response = await confirmAnswer(choiceQ.question, proposed);
       if (response === null) return { skipped: true, reason: 'user skipped during option confirmation' };
       finalChoice = response;
     } else {
@@ -173,13 +193,13 @@ export class LLMAnswerStrategy extends AnswerStrategy {
     // choice, it has to actually be one of the clickable options — fall
     // back to the model's original (valid) choice if it isn't, rather
     // than trying to click something that doesn't exist.
-    const matched = optionQ.options.find((o) => o.toLowerCase() === String(finalChoice).trim().toLowerCase());
+    const matched = choiceQ.options.find((o) => o.toLowerCase() === String(finalChoice).trim().toLowerCase());
     const toSelect = matched ?? proposed;
     if (!matched && finalChoice !== proposed) {
       console.warn(`[llm-answer] "${finalChoice}" isn't one of the valid options — using "${proposed}" instead.`);
     }
 
-    await selectOption(toSelect);
+    await selectFn(toSelect);
     return { skipped: false };
   }
 

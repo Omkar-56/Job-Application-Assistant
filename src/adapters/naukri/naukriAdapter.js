@@ -42,10 +42,13 @@ const SELECTORS = {
   // Scoped to the actual message list (ul[id^="chatList_"]) instead of a
   // broad class-substring guess — each message is an <li>.
   chatBotMessage: 'ul[id^="chatList_"] li',
-  // Quick-reply buttons the chat sometimes shows instead of a free-text
-  // question — e.g. "Upload Resume" / "I'll do it later", confirmed via
-  // DevTools: <div class="chatbot_Chip chipInRow chipItem"><span>...</span></div>
-  chatChip: '.chatbot_Chip.chipItem, [class*="chatbot_Chip"]',
+  // Quick-reply chip questions — e.g. "Upload Resume" / "I'll do it
+  // later", or more generally any Yes/No/city-name style choice. The
+  // per-chip class (chipItem) is inconsistent between jobs — confirmed via
+  // two DevTools captures where it appeared on different chips each time —
+  // so this targets the stable container and its DIRECT children only,
+  // rather than matching on that class.
+  chipsContainer: '.chatbot_Chips',
   // Single-select radio question (e.g. notice period, location) — confirmed
   // via DevTools: <div class="singleselect-radiobutton">...
   // <div class="ssrc__radio-btn-container"><input type="radio" ...><label>...
@@ -316,6 +319,8 @@ export class NaukriAdapter extends JobPortalAdapter {
         confirmSubmit: () => this._confirmSubmit(),
         readOptionQuestion: () => this.readOptionQuestion(),
         selectOption: (optionText) => this.selectOption(optionText),
+        readChipQuestion: () => this.readChipQuestion(),
+        selectChip: (optionText) => this.selectChip(optionText),
       });
       if (!result.completed) {
         return { status: 'needs_manual_review', reason: result.reason || 'chat questions left unanswered' };
@@ -359,27 +364,42 @@ export class NaukriAdapter extends JobPortalAdapter {
    * this.resumePath automatically — this is a deterministic action, not
    * something that needs an LLM's or a human's judgment, so it's handled
    * transparently regardless of which answer strategy is active.
+   *
+   * Tries two upload mechanisms since it's unclear which one Naukri uses
+   * here: a plain <input type="file"> that appears after the click (most
+   * common for React upload widgets — doesn't need a native dialog at
+   * all), falling back to a native OS file-chooser dialog if no such input
+   * shows up.
    * @returns {Promise<boolean>} true if it found and handled the chip
    */
   async _autoHandleResumeUploadChip() {
     if (!this.resumePath) return false; // nothing to upload — leave it for manual review
 
-    const uploadChip = this.page
-      .locator(SELECTORS.chatChip)
-      .filter({ hasText: /^upload resume$/i })
-      .first();
-
-    if (!(await uploadChip.count()) || !(await uploadChip.isVisible().catch(() => false))) {
-      return false;
-    }
+    const uploadChip = await this._findChipByText(/^upload resume$/i);
+    if (!uploadChip) return false;
 
     console.log('[naukri] Chat requested a resume upload — uploading automatically.');
     try {
-      const [fileChooser] = await Promise.all([
-        this.page.waitForEvent('filechooser', { timeout: 10_000 }),
-        uploadChip.click(),
-      ]);
-      await fileChooser.setFiles(this.resumePath);
+      const fileChooserPromise = this.page.waitForEvent('filechooser', { timeout: 8000 }).catch(() => null);
+      await uploadChip.click();
+      await humanDelay(800, 1500);
+
+      const fileInput = this.page.locator('input[type="file"]').first();
+      if (await fileInput.count()) {
+        await fileInput.setInputFiles(this.resumePath);
+      } else {
+        const chooser = await fileChooserPromise;
+        if (chooser) {
+          await chooser.setFiles(this.resumePath);
+        } else {
+          console.warn(
+            '[naukri] Clicked "Upload Resume" but found neither a file input nor a native ' +
+              'file dialog — the upload UI may differ from expected. Flagging for manual review.'
+          );
+          return false;
+        }
+      }
+
       await humanDelay(1500, 2500);
       console.log('[naukri] Resume uploaded.');
       return true;
@@ -387,6 +407,57 @@ export class NaukriAdapter extends JobPortalAdapter {
       console.warn(`[naukri] Found the resume-upload chip but the upload failed: ${err.message}`);
       return false;
     }
+  }
+
+  /** Finds a chip (direct child of .chatbot_Chips) whose text matches, or null. */
+  async _findChipByText(pattern) {
+    const container = this.page.locator(SELECTORS.chipsContainer).first();
+    if (!(await container.count())) return null;
+    const chip = container.locator('> div').filter({ hasText: pattern }).first();
+    if (!(await chip.count()) || !(await chip.isVisible().catch(() => false))) return null;
+    return chip;
+  }
+
+  /**
+   * Detects a general chip-choice question (Yes/No, a city name list,
+   * etc.) — the same UI as the resume-upload chips, but for anything other
+   * than that specific case, which is auto-handled separately. Returns
+   * null if the current chips ARE the resume-upload prompt (leave that to
+   * _autoHandleResumeUploadChip) or if no chips are showing at all.
+   * @returns {Promise<{ question: string, options: string[] } | null>}
+   */
+  async readChipQuestion() {
+    const container = this.page.locator(SELECTORS.chipsContainer).first();
+    if (!(await container.count()) || !(await container.isVisible().catch(() => false))) {
+      return null;
+    }
+
+    const chips = container.locator('> div');
+    const count = await chips.count();
+    const options = [];
+    for (let i = 0; i < count; i++) {
+      const text = (await chips.nth(i).textContent())?.trim();
+      if (text) options.push(text);
+    }
+    if (!options.length) return null;
+    if (options.some((o) => /^upload resume$/i.test(o))) return null; // handled separately
+
+    const question = await this._readCurrentQuestion();
+    return { question, options };
+  }
+
+  /** Clicks the chip whose text matches optionText exactly (case-insensitive). */
+  async selectChip(optionText) {
+    const chip = await this._findChipByText(
+      new RegExp(`^${optionText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i')
+    );
+    if (!chip) {
+      console.warn(`[naukri] Could not find a chip matching "${optionText}" to click.`);
+      return false;
+    }
+    await chip.click();
+    await humanDelay(400, 800);
+    return true;
   }
 
   /**
