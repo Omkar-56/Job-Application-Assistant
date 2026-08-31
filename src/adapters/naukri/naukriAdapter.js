@@ -286,19 +286,25 @@ export class NaukriAdapter extends JobPortalAdapter {
     await applyBtn.click();
 
     // Don't guess how long Naukri takes to render — actively wait (up to
-    // 15s) for either the chat panel or a success confirmation, whichever
-    // comes first. A fixed short delay here was the bug: if the panel took
-    // longer than the delay to appear, we'd wrongly conclude there wasn't
-    // one and move straight to the next job, which looked like the panel
-    // "closing immediately."
-    const [chatVisible, appliedVisible] = await Promise.all([
+    // 15s) for ANY of: the free-text panel, a chip-choice panel (e.g. the
+    // resume-upload prompt — this can appear with NO text box at all),
+    // a radio-question panel, or a success confirmation. Watching only
+    // the text box was the bug: a job whose chat opens with just chips
+    // would never trip that check, time out, and get wrongly treated as
+    // "no panel here" while the real (chip) panel sat open unanswered.
+    const [chatVisible, chipVisible, radioVisible, appliedVisible] = await Promise.all([
       this.page.locator(SELECTORS.chatQuestionInput).first()
+        .waitFor({ state: 'visible', timeout: 15_000 }).then(() => true).catch(() => false),
+      this.page.locator(SELECTORS.chipsContainer).first()
+        .waitFor({ state: 'visible', timeout: 15_000 }).then(() => true).catch(() => false),
+      this.page.locator(SELECTORS.radioQuestionContainer).first()
         .waitFor({ state: 'visible', timeout: 15_000 }).then(() => true).catch(() => false),
       this.page.locator(SELECTORS.appliedMarker).first()
         .waitFor({ state: 'visible', timeout: 15_000 }).then(() => true).catch(() => false),
     ]);
+    const panelVisible = chatVisible || chipVisible || radioVisible;
 
-    if (chatVisible) {
+    if (panelVisible) {
       console.log('[naukri] Recruiter questions popped up — handing off to answer strategy.');
       // Resolve any resume-upload chip up front too — it can be the very
       // first thing the chat shows, before checkStillOpen's first poll.
@@ -312,7 +318,15 @@ export class NaukriAdapter extends JobPortalAdapter {
           // or a human's judgment. Neither ManualAnswerStrategy nor
           // LLMAnswerStrategy need to know this exists.
           await this._autoHandleResumeUploadChip();
-          return this.page.locator(SELECTORS.chatQuestionInput).first().isVisible().catch(() => false);
+          // "Still open" means ANY of the three panel shapes is visible —
+          // same blind spot as the initial detection above would otherwise
+          // repeat here on every poll.
+          const [textOpen, chipOpen, radioOpen] = await Promise.all([
+            this.page.locator(SELECTORS.chatQuestionInput).first().isVisible().catch(() => false),
+            this.page.locator(SELECTORS.chipsContainer).first().isVisible().catch(() => false),
+            this.page.locator(SELECTORS.radioQuestionContainer).first().isVisible().catch(() => false),
+          ]);
+          return textOpen || chipOpen || radioOpen;
         },
         readCurrentQuestion: () => this._readCurrentQuestion(),
         typeAnswer: (text) => this._typeAnswer(text),
