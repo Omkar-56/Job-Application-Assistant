@@ -108,6 +108,80 @@ export class PostgresJobStore {
     );
   }
 
+  /**
+   * Aggregate counts for the dashboard's summary cards.
+   * @returns {Promise<{ total: number, byStatus: object, scoredCount: number, avgMatchScore: number|null, appliedLast7Days: number }>}
+   */
+  async getSummary() {
+    const [statusRes, statsRes] = await Promise.all([
+      this.pool.query(
+        'SELECT application_status, COUNT(*)::int AS count FROM jobs WHERE portal = $1 GROUP BY application_status',
+        [this.portal]
+      ),
+      this.pool.query(
+        `SELECT
+           COUNT(*)::int AS total,
+           COUNT(*) FILTER (WHERE match_score IS NOT NULL)::int AS scored_count,
+           ROUND(AVG(match_score)::numeric, 1) AS avg_match_score,
+           COUNT(*) FILTER (WHERE applied_at > now() - interval '7 days')::int AS applied_last_7_days
+         FROM jobs WHERE portal = $1`,
+        [this.portal]
+      ),
+    ]);
+
+    const byStatus = {};
+    for (const row of statusRes.rows) byStatus[row.application_status] = row.count;
+    const stats = statsRes.rows[0];
+
+    return {
+      total: stats.total,
+      byStatus,
+      scoredCount: stats.scored_count,
+      avgMatchScore: stats.avg_match_score === null ? null : Number(stats.avg_match_score),
+      appliedLast7Days: stats.applied_last_7_days,
+    };
+  }
+
+  /**
+   * Filtered, paginated job listing for the dashboard's table.
+   * @param {{ status?: string, minScore?: number, search?: string, limit?: number, offset?: number }} [opts]
+   * @returns {Promise<{ jobs: object[], total: number }>}
+   */
+  async listJobs({ status, minScore, search, limit = 50, offset = 0 } = {}) {
+    const conditions = ['portal = $1'];
+    const params = [this.portal];
+    let idx = 2;
+
+    if (status) {
+      conditions.push(`application_status = $${idx++}`);
+      params.push(status);
+    }
+    if (minScore !== undefined && minScore !== null) {
+      conditions.push(`match_score >= $${idx++}`);
+      params.push(minScore);
+    }
+    if (search) {
+      conditions.push(`(title ILIKE $${idx} OR company ILIKE $${idx})`);
+      params.push(`%${search}%`);
+      idx++;
+    }
+
+    const whereClause = conditions.join(' AND ');
+
+    const countRes = await this.pool.query(`SELECT COUNT(*)::int AS count FROM jobs WHERE ${whereClause}`, params);
+    const total = countRes.rows[0].count;
+
+    const listParams = [...params, limit, offset];
+    const rowsRes = await this.pool.query(
+      `SELECT * FROM jobs WHERE ${whereClause}
+       ORDER BY discovered_at DESC
+       LIMIT $${idx++} OFFSET $${idx++}`,
+      listParams
+    );
+
+    return { jobs: rowsRes.rows.map(rowToJob), total };
+  }
+
   async close() {
     await this.pool.end();
   }

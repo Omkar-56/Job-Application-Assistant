@@ -360,6 +360,48 @@ but like the resume-upload chip, the actual Naukri selectors involved
 (`.singleselect-radiobutton`, etc.) haven't been exercised against the real
 site yet. Watch closely on your first real run with each question type.
 
+## Phase 9: application tracking dashboard
+
+A small Express API (`src/server/index.js`) over the existing Postgres
+data, plus a static dashboard (`public/`) — vanilla HTML/CSS/JS, no build
+step, consistent with the rest of this project staying dependency-light.
+
+**Run:** `npm run dashboard`, then open http://localhost:4000 (port
+configurable via `DASHBOARD_PORT`).
+
+**What it shows:**
+- Summary cards: total tracked, applied, needs review, external site,
+  failed, discovered/pending, dry run, average match score, applied in the
+  last 7 days.
+- A filterable, paginated job table — search by title/company, filter by
+  status or minimum match score — with match score and status shown as
+  color-coded badges, and a link straight to the Naukri listing.
+
+**API endpoints** (used by the dashboard, but usable directly too):
+- `GET /api/summary` — the aggregate counts above.
+- `GET /api/jobs?status=&minScore=&search=&limit=&offset=` — filtered,
+  paginated job list.
+
+**Requires `STORAGE_BACKEND=postgres`** — the summary/filter queries need
+a real database; it fails with a clear error on the JSON fallback store
+rather than silently returning nothing.
+
+**Tested against real data** (not just syntax-checked): seeded a real
+Postgres instance with your actual 60-job dataset spread across every
+status (applied, needs_manual_review, external_site, failed, dry_run,
+discovered), started the real server, and hit every endpoint directly —
+`/api/summary` returned correct counts per status plus a real average
+match score; `/api/jobs` filters (`status`, `minScore`, `search`) each
+returned exactly the right subset; pagination across 3 pages summed
+correctly to the true total (25 + 25 + 10 = 60); all three static assets
+(`index.html`, `styles.css`, `app.js`) served with 200s; the
+`STORAGE_BACKEND=json` guard correctly rejected with a clear error instead
+of starting up broken.
+
+**What to test:** open the dashboard in a browser with your real data,
+click through status filters and the score filter, try the search box,
+and confirm the "Open ↗" links go to the right Naukri listings.
+
 ## What to test
 
 - Run once with your real search criteria and confirm the browser opens,
@@ -383,9 +425,12 @@ src/
   core/JobPortalAdapter.js   — interface every portal adapter implements
   adapters/naukri/           — all Naukri-specific logic lives here only
   storage/jobStore.js        — dedupe/persistence, JSON-backed for now
+  storage/postgresJobStore.js — Postgres-backed store, incl. dashboard queries
+  server/index.js            — Express API for the dashboard
   config/                    — env + search criteria loading
   utils/delay.js             — human-like randomized delays
   index.js                   — wires it together
+public/                      — dashboard static files (HTML/CSS/JS, no build step)
 data/naukri-jobs.json        — accumulated discovered jobs (gitignored)
 auth/naukri-state.json       — saved login session, not your password (gitignored)
 ```
