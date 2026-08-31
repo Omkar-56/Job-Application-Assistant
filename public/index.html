@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Job Application Assistant — Dashboard</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <div class="app">
+    <header class="topbar">
+      <div class="brand">
+        <span class="brand-mark">◆</span>
+        <div>
+          <h1>Job Application Assistant</h1>
+          <p class="subtitle">Naukri application tracking</p>
+        </div>
+      </div>
+      <button id="refreshBtn" class="btn btn-ghost" title="Refresh data">↻ Refresh</button>
+    </header>
+
+    <main>
+      <section id="summaryCards" class="cards-grid" aria-label="Summary">
+        <!-- populated by app.js -->
+      </section>
+
+      <section class="panel">
+        <div class="panel-header">
+          <h2>Jobs</h2>
+          <div class="filters">
+            <input id="searchInput" type="search" placeholder="Search title or company…" class="input" />
+            <select id="statusFilter" class="input">
+              <option value="">All statuses</option>
+              <option value="discovered">Discovered</option>
+              <option value="dry_run">Dry run</option>
+              <option value="applied">Applied</option>
+              <option value="needs_manual_review">Needs review</option>
+              <option value="external_site">External site</option>
+              <option value="failed">Failed</option>
+            </select>
+            <input id="minScoreFilter" type="number" min="0" max="100" placeholder="Min score" class="input input-narrow" />
+          </div>
+        </div>
+
+        <div class="table-wrap">
+          <table id="jobsTable">
+            <thead>
+              <tr>
+                <th>Job</th>
+                <th>Location</th>
+                <th>Experience</th>
+                <th>Match</th>
+                <th>Status</th>
+                <th>Date</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="jobsBody">
+              <!-- populated by app.js -->
+            </tbody>
+          </table>
+          <div id="emptyState" class="empty-state" hidden>No jobs match these filters.</div>
+        </div>
+
+        <div class="pagination">
+          <button id="prevPage" class="btn btn-ghost" disabled>← Prev</button>
+          <span id="pageInfo" class="page-info"></span>
+          <button id="nextPage" class="btn btn-ghost" disabled>Next →</button>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script src="/app.js"></script>
+</body>
+</html>
