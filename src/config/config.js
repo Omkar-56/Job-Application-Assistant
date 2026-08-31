@@ -49,4 +49,7 @@ export const config = {
     // Each unmatched job costs one page load + one LLM call — kept small by default.
     maxPerRun: Number(process.env.MATCH_MAX_PER_RUN ?? 10),
   },
+  dashboard: {
+    port: Number(process.env.DASHBOARD_PORT ?? 4000),
+  },
 };
