@@ -30,6 +30,13 @@ const SELECTORS = {
   // --- Phase 4: apply flow ---
   applyButton: 'button:text-is("Apply"), #apply-button',
   appliedMarker: 'button:text-is("Applied")',
+  // The REAL success confirmation, confirmed via DevTools: a green banner
+  // <div class="apply-status-header green">...<span class="apply-message">
+  // "You have successfully applied to..."</span></div> — NOT a button
+  // changing to "Applied". This was the actual bug: successful applies
+  // were being marked needs_manual_review because only the button variant
+  // was checked.
+  appliedBanner: '.apply-status-header.green, span.apply-message',
   // Naukri sometimes redirects to the company's own site instead of a
   // native apply — different button text, easy to tell apart from the
   // regular Apply button.
@@ -292,7 +299,7 @@ export class NaukriAdapter extends JobPortalAdapter {
     // the text box was the bug: a job whose chat opens with just chips
     // would never trip that check, time out, and get wrongly treated as
     // "no panel here" while the real (chip) panel sat open unanswered.
-    const [chatVisible, chipVisible, radioVisible, appliedVisible] = await Promise.all([
+    const [chatVisible, chipVisible, radioVisible, appliedVisible, bannerVisible] = await Promise.all([
       this.page.locator(SELECTORS.chatQuestionInput).first()
         .waitFor({ state: 'visible', timeout: 15_000 }).then(() => true).catch(() => false),
       this.page.locator(SELECTORS.chipsContainer).first()
@@ -300,6 +307,8 @@ export class NaukriAdapter extends JobPortalAdapter {
       this.page.locator(SELECTORS.radioQuestionContainer).first()
         .waitFor({ state: 'visible', timeout: 15_000 }).then(() => true).catch(() => false),
       this.page.locator(SELECTORS.appliedMarker).first()
+        .waitFor({ state: 'visible', timeout: 15_000 }).then(() => true).catch(() => false),
+      this.page.locator(SELECTORS.appliedBanner).first()
         .waitFor({ state: 'visible', timeout: 15_000 }).then(() => true).catch(() => false),
     ]);
     const panelVisible = chatVisible || chipVisible || radioVisible;
@@ -342,7 +351,9 @@ export class NaukriAdapter extends JobPortalAdapter {
     }
 
     await humanDelay(1000, 2000);
-    const confirmedApplied = (await this.page.locator(SELECTORS.appliedMarker).count()) > 0;
+    const confirmedApplied =
+      (await this.page.locator(SELECTORS.appliedMarker).count()) > 0 ||
+      (await this.page.locator(SELECTORS.appliedBanner).count()) > 0;
     if (confirmedApplied) {
       console.log('[naukri] Application confirmed.');
       return { status: 'applied' };

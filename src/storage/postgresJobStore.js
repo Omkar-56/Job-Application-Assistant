@@ -109,6 +109,36 @@ export class PostgresJobStore {
   }
 
   /**
+   * Jobs successfully applied to today — for the "Applied Today" section.
+   * @returns {Promise<object[]>}
+   */
+  async getAppliedToday() {
+    const { rows } = await this.pool.query(
+      `SELECT * FROM jobs
+       WHERE portal = $1 AND application_status = 'applied' AND applied_at::date = CURRENT_DATE
+       ORDER BY applied_at DESC`,
+      [this.portal]
+    );
+    return rows.map(rowToJob);
+  }
+
+  /**
+   * Jobs that need manual follow-up — automation failed, or the listing
+   * requires applying on the company's own site. For the "Needs Your
+   * Attention" dashboard section.
+   * @returns {Promise<object[]>}
+   */
+  async getNeedsAttention() {
+    const { rows } = await this.pool.query(
+      `SELECT * FROM jobs
+       WHERE portal = $1 AND application_status IN ('failed', 'external_site')
+       ORDER BY discovered_at DESC`,
+      [this.portal]
+    );
+    return rows.map(rowToJob);
+  }
+
+  /**
    * Aggregate counts for the dashboard's summary cards.
    * @returns {Promise<{ total: number, byStatus: object, scoredCount: number, avgMatchScore: number|null, appliedLast7Days: number }>}
    */
