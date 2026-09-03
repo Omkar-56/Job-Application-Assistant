@@ -373,30 +373,60 @@ configurable via `DASHBOARD_PORT`).
 - Summary cards: total tracked, applied, needs review, external site,
   failed, discovered/pending, dry run, average match score, applied in the
   last 7 days.
-- A filterable, paginated job table — search by title/company, filter by
-  status or minimum match score — with match score and status shown as
-  color-coded badges, and a link straight to the Naukri listing.
+- **Applied Today** — everything successfully applied to today.
+- **Needs Your Attention** — `failed` and `external_site` jobs, so you
+  know exactly what to go finish by hand.
+- **All Jobs** — the filterable, paginated table (search, status filter,
+  min score filter) with color-coded score/status badges and a link to
+  each Naukri listing.
 
-**API endpoints** (used by the dashboard, but usable directly too):
-- `GET /api/summary` — the aggregate counts above.
-- `GET /api/jobs?status=&minScore=&search=&limit=&offset=` — filtered,
-  paginated job list.
+**Two run buttons in the header:**
+- **Discover + Match** — runs discovery then AI matching in the
+  background (as child processes), always headless. Never applies to
+  anything.
+- **Apply to Discovered (dry run)** — runs the apply pipeline, but is
+  **always forced to `DRY_RUN=true`**, regardless of your `.env`. A
+  background/unattended run has no terminal for the batch-review or
+  per-answer confirmations to prompt on — dry-run mode is the one path
+  that never reaches those prompts at all, so this is a hard safety rule,
+  not a default you can override from the UI. Live applications stay a
+  deliberate CLI action (`npm run apply:headed` with `DRY_RUN=false`)
+  where those interactive checks work properly.
 
-**Requires `STORAGE_BACKEND=postgres`** — the summary/filter queries need
-a real database; it fails with a clear error on the JSON fallback store
-rather than silently returning nothing.
+Both buttons poll `/api/runs/status` + `/api/runs/logs` every 2s while
+running and show a live log panel; only one run can be active at a time
+(a second attempt gets a `409` with a clear message).
 
-**Tested against real data** (not just syntax-checked): seeded a real
-Postgres instance with your actual 60-job dataset spread across every
-status (applied, needs_manual_review, external_site, failed, dry_run,
-discovered), started the real server, and hit every endpoint directly —
-`/api/summary` returned correct counts per status plus a real average
-match score; `/api/jobs` filters (`status`, `minScore`, `search`) each
-returned exactly the right subset; pagination across 3 pages summed
-correctly to the true total (25 + 25 + 10 = 60); all three static assets
-(`index.html`, `styles.css`, `app.js`) served with 200s; the
-`STORAGE_BACKEND=json` guard correctly rejected with a clear error instead
-of starting up broken.
+**API endpoints:**
+- `GET /api/summary`, `GET /api/jobs?status=&minScore=&search=&limit=&offset=`
+- `GET /api/jobs/applied-today`, `GET /api/jobs/needs-attention`
+- `POST /api/runs/discover-match`, `POST /api/runs/apply`,
+  `GET /api/runs/status`, `GET /api/runs/logs?tail=`
+
+**Requires `STORAGE_BACKEND=postgres`** — fails with a clear error on the
+JSON fallback store rather than silently returning nothing.
+
+### Bug fix: successful applies were being marked `needs_manual_review`
+
+Root cause of two reported symptoms (`applied_at` always `null`, and
+successful applies showing the wrong status): the success-confirmation
+check only looked for a button changing text to "Applied". Naukri's real
+confirmation is a green banner (`.apply-status-header.green` /
+`span.apply-message`, "You have successfully applied to...") — a
+completely different element the old check never saw. Fixed by checking
+both. `applied_at` was never actually broken — it only populates when
+status is set to `'applied'`, which almost never happened because of this
+detection gap; verified directly against Postgres that it now populates
+correctly once `'applied'` is genuinely reached.
+
+**Tested against real data:** seeded Postgres with jobs across every
+status (applied, external_site, failed), started the real server, hit
+every endpoint — `applied-today` and `needs-attention` each returned
+exactly the right jobs; the run-lock pattern verified with a controlled
+concurrency test (reject a second run while one's active, allow a new one
+once it finishes); confirmed `applied_at` populates the instant
+`status='applied'` is set, proving the fix addresses both symptoms with
+one change.
 
 **What to test:** open the dashboard in a browser with your real data,
 click through status filters and the score filter, try the search box,
