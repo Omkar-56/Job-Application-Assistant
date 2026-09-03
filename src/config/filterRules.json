@@ -1,6 +1,6 @@
 {
   "includeKeywords": [],
-  "excludeKeywords": ["java", ".net"],
+  "excludeKeywords": [],
   "experience": { "min": null, "max": null },
   "onUnknownExperience": "include"
 }
