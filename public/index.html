@@ -16,17 +16,45 @@
           <p class="subtitle">Naukri application tracking</p>
         </div>
       </div>
-      <button id="refreshBtn" class="btn btn-ghost" title="Refresh data">↻ Refresh</button>
+      <div class="header-actions">
+        <button id="runDiscoverBtn" class="btn btn-secondary">Discover + Match</button>
+        <button id="runApplyBtn" class="btn btn-primary" title="Always runs as a dry run — see docs">Apply to Discovered (dry run)</button>
+        <button id="refreshBtn" class="btn btn-ghost" title="Refresh data">↻</button>
+      </div>
     </header>
+
+    <div id="runBanner" class="run-banner" hidden>
+      <div class="run-banner-row">
+        <span id="runBannerStatus" class="run-banner-status"></span>
+        <button id="toggleLogsBtn" class="btn btn-ghost btn-small">Show logs</button>
+      </div>
+      <pre id="runLogs" class="run-logs" hidden></pre>
+    </div>
 
     <main>
       <section id="summaryCards" class="cards-grid" aria-label="Summary">
         <!-- populated by app.js -->
       </section>
 
+      <section class="mini-panels">
+        <div class="panel mini-panel">
+          <div class="panel-header">
+            <h2>Applied Today</h2>
+          </div>
+          <div id="appliedTodayList" class="mini-list"><!-- populated by app.js --></div>
+        </div>
+
+        <div class="panel mini-panel">
+          <div class="panel-header">
+            <h2>Needs Your Attention</h2>
+          </div>
+          <div id="needsAttentionList" class="mini-list"><!-- populated by app.js --></div>
+        </div>
+      </section>
+
       <section class="panel">
         <div class="panel-header">
-          <h2>Jobs</h2>
+          <h2>All Jobs</h2>
           <div class="filters">
             <input id="searchInput" type="search" placeholder="Search title or company…" class="input" />
             <select id="statusFilter" class="input">

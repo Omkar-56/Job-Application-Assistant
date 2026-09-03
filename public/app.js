@@ -120,6 +120,47 @@ function renderPagination() {
   el('nextPage').disabled = end >= currentTotal;
 }
 
+function renderMiniList(containerId, jobs, { emptyText, showReason }) {
+  const container = el(containerId);
+  if (!jobs.length) {
+    container.innerHTML = `<div class="mini-empty">${emptyText}</div>`;
+    return;
+  }
+  container.innerHTML = jobs
+    .map((job) => {
+      const meta = STATUS_META[job.applicationStatus] || { label: job.applicationStatus };
+      const reasonBadge = showReason
+        ? `<span class="badge" style="color:var(--status-${job.applicationStatus});background:var(--status-${job.applicationStatus}-bg)">${escapeHtml(meta.label)}</span>`
+        : `<span class="date-cell">${formatDate(job.appliedAt)}</span>`;
+      return `
+        <div class="mini-item">
+          <div>
+            <p class="mini-item-title">${escapeHtml(job.title)}</p>
+            <p class="mini-item-company">${escapeHtml(job.company || '')}</p>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px;">
+            ${reasonBadge}
+            ${job.url ? `<a href="${escapeHtml(job.url)}" target="_blank" rel="noopener" style="font-size:12px;color:var(--primary);font-weight:600;text-decoration:none;">Open ↗</a>` : ''}
+          </div>
+        </div>`;
+    })
+    .join('');
+}
+
+async function loadAppliedToday() {
+  const res = await fetch('/api/jobs/applied-today');
+  if (!res.ok) throw new Error('Failed to load applied-today');
+  const { jobs } = await res.json();
+  renderMiniList('appliedTodayList', jobs, { emptyText: 'No applications submitted today yet.', showReason: false });
+}
+
+async function loadNeedsAttention() {
+  const res = await fetch('/api/jobs/needs-attention');
+  if (!res.ok) throw new Error('Failed to load needs-attention');
+  const { jobs } = await res.json();
+  renderMiniList('needsAttentionList', jobs, { emptyText: 'Nothing needs your attention right now.', showReason: true });
+}
+
 function escapeHtml(str) {
   const div = document.createElement('div');
   div.textContent = str ?? '';
@@ -129,6 +170,8 @@ function escapeHtml(str) {
 function refreshAll() {
   loadSummary().catch((err) => console.error(err));
   loadJobs().catch((err) => console.error(err));
+  loadAppliedToday().catch((err) => console.error(err));
+  loadNeedsAttention().catch((err) => console.error(err));
 }
 
 let searchDebounce;
@@ -161,5 +204,91 @@ el('nextPage').addEventListener('click', () => {
 });
 
 el('refreshBtn').addEventListener('click', refreshAll);
+
+// --- Run triggers (Discover+Match / Apply) ---
+let pollTimer = null;
+let logsVisible = false;
+
+async function triggerRun(endpoint, button) {
+  button.disabled = true;
+  try {
+    const res = await fetch(endpoint, { method: 'POST' });
+    if (res.status === 409) {
+      const { error } = await res.json();
+      alert(error || 'A run is already in progress.');
+      button.disabled = false;
+      return;
+    }
+    if (!res.ok) throw new Error('Failed to start run');
+    startPolling();
+  } catch (err) {
+    console.error(err);
+    alert('Could not start the run — check the server console.');
+    button.disabled = false;
+  }
+}
+
+el('runDiscoverBtn').addEventListener('click', () => triggerRun('/api/runs/discover-match', el('runDiscoverBtn')));
+el('runApplyBtn').addEventListener('click', () => {
+  if (!confirm('This runs Apply in dry-run mode (dashboard runs never submit real applications). Continue?')) return;
+  triggerRun('/api/runs/apply', el('runApplyBtn'));
+});
+
+el('toggleLogsBtn').addEventListener('click', () => {
+  logsVisible = !logsVisible;
+  el('runLogs').hidden = !logsVisible;
+  el('toggleLogsBtn').textContent = logsVisible ? 'Hide logs' : 'Show logs';
+});
+
+function startPolling() {
+  el('runBanner').hidden = false;
+  if (pollTimer) return;
+  pollTimer = setInterval(pollRunStatus, 2000);
+  pollRunStatus();
+}
+
+async function pollRunStatus() {
+  const [statusRes, logsRes] = await Promise.all([fetch('/api/runs/status'), fetch('/api/runs/logs?tail=200')]);
+  const status = await statusRes.json();
+  const { logs } = await logsRes.json();
+
+  const statusEl = el('runBannerStatus');
+  const kindLabel = status.kind === 'discover-match' ? 'Discover + Match' : status.kind === 'apply' ? 'Apply (dry run)' : '';
+
+  if (status.running) {
+    statusEl.textContent = `${kindLabel} running…`;
+    statusEl.className = 'run-banner-status status-running';
+  } else if (status.exitCode === 0) {
+    statusEl.textContent = `${kindLabel} finished successfully.`;
+    statusEl.className = 'run-banner-status status-done';
+    stopPollingAndRefresh();
+  } else if (status.exitCode !== null) {
+    statusEl.textContent = `${kindLabel} finished with errors (exit code ${status.exitCode}) — check logs.`;
+    statusEl.className = 'run-banner-status status-error';
+    logsVisible = true;
+    el('runLogs').hidden = false;
+    el('toggleLogsBtn').textContent = 'Hide logs';
+    stopPollingAndRefresh();
+  }
+
+  el('runLogs').textContent = logs.join('\n');
+  el('runLogs').scrollTop = el('runLogs').scrollHeight;
+}
+
+function stopPollingAndRefresh() {
+  clearInterval(pollTimer);
+  pollTimer = null;
+  el('runDiscoverBtn').disabled = false;
+  el('runApplyBtn').disabled = false;
+  refreshAll();
+}
+
+// Resume polling on page load if a run was already active (e.g. page refreshed mid-run)
+fetch('/api/runs/status')
+  .then((r) => r.json())
+  .then((status) => {
+    if (status.running) startPolling();
+  })
+  .catch(() => {});
 
 refreshAll();
