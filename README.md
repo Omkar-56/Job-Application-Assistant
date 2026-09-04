@@ -406,6 +406,36 @@ running and show a live log panel; only one run can be active at a time
 **Requires `STORAGE_BACKEND=postgres`** — fails with a clear error on the
 JSON fallback store rather than silently returning nothing.
 
+### Bug fix: login went straight to the login URL instead of a homepage trigger
+
+The homepage's "Jobseeker Login" trigger element had drifted from what our
+selector expected — `login()` now navigates directly to
+`https://login.naukri.com/nLogin/Login.php` (confirmed stable via
+DevTools: `#usernameField`, `#passwordField`, and a submit button scoped
+to `form#loginForm` so it doesn't collide with the nav bar's own "Login"
+link) instead of depending on a homepage click-through that could break
+independently of the login page itself.
+
+### "Needs Your Attention" now shows only today's failures
+
+Added an `attempted_at` timestamp, stamped every time the apply pipeline
+touches a job regardless of outcome (not just successes). "Needs Your
+Attention" filters on this — `failed`/`external_site` jobs attempted
+*today* — rather than every failure ever accumulated. Verified directly:
+a job backdated 5 days stays correctly excluded; a job attempted today
+correctly shows up.
+
+### "Mark Applied" moves a job out of Needs Attention
+
+Each item in "Needs Your Attention" now has a **Mark Applied ✓** button
+alongside "Open ↗" — once you've manually finished the application (e.g.
+on the company's own site), click it and the job moves to "Applied
+Today" and out of "Needs Your Attention", so that section always reflects
+what's genuinely still outstanding. New endpoint:
+`POST /api/jobs/:portalJobId/mark-applied`. Verified against real
+Postgres and the live HTTP endpoint — the job disappeared from one list
+and appeared in the other in the same call.
+
 ### Bug fix: successful applies were being marked `needs_manual_review`
 
 Root cause of two reported symptoms (`applied_at` always `null`, and

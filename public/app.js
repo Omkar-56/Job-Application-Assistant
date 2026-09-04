@@ -132,6 +132,9 @@ function renderMiniList(containerId, jobs, { emptyText, showReason }) {
       const reasonBadge = showReason
         ? `<span class="badge" style="color:var(--status-${job.applicationStatus});background:var(--status-${job.applicationStatus}-bg)">${escapeHtml(meta.label)}</span>`
         : `<span class="date-cell">${formatDate(job.appliedAt)}</span>`;
+      const markAppliedBtn = showReason
+        ? `<button class="btn btn-small btn-secondary mark-applied-btn" data-id="${escapeHtml(job.portalJobId)}">Mark Applied ✓</button>`
+        : '';
       return `
         <div class="mini-item">
           <div>
@@ -140,6 +143,7 @@ function renderMiniList(containerId, jobs, { emptyText, showReason }) {
           </div>
           <div style="display:flex;align-items:center;gap:10px;">
             ${reasonBadge}
+            ${markAppliedBtn}
             ${job.url ? `<a href="${escapeHtml(job.url)}" target="_blank" rel="noopener" style="font-size:12px;color:var(--primary);font-weight:600;text-decoration:none;">Open ↗</a>` : ''}
           </div>
         </div>`;
@@ -160,6 +164,28 @@ async function loadNeedsAttention() {
   const { jobs } = await res.json();
   renderMiniList('needsAttentionList', jobs, { emptyText: 'Nothing needs your attention right now.', showReason: true });
 }
+
+// Event delegation — the mark-applied buttons are re-rendered on every
+// refresh, so a single listener on the container catches all of them.
+el('needsAttentionList').addEventListener('click', async (e) => {
+  const btn = e.target.closest('.mark-applied-btn');
+  if (!btn) return;
+  const portalJobId = btn.dataset.id;
+  btn.disabled = true;
+  btn.textContent = 'Marking…';
+  try {
+    const res = await fetch(`/api/jobs/${encodeURIComponent(portalJobId)}/mark-applied`, { method: 'POST' });
+    if (!res.ok) throw new Error('Failed to mark as applied');
+    // Moves out of Needs Attention and into Applied Today — and updates
+    // the summary counts to match.
+    await Promise.all([loadNeedsAttention(), loadAppliedToday(), loadSummary(), loadJobs()]);
+  } catch (err) {
+    console.error(err);
+    alert('Could not mark this as applied — check the server console.');
+    btn.disabled = false;
+    btn.textContent = 'Mark Applied ✓';
+  }
+});
 
 function escapeHtml(str) {
   const div = document.createElement('div');

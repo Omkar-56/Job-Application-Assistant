@@ -22,10 +22,12 @@ const SELECTORS = {
   skills: '.tags-gt li, .tagsAndButtons li',
   postedDate: '.job-post-day, .fleft.postedDate',
   paginationLink: 'div.styles_pages__v1rAK a',
-  loginTrigger: 'a[title="Jobseeker Login"], #login_Layer',
+  // Confirmed via DevTools on https://login.naukri.com/nLogin/Login.php
   loginEmail: '#usernameField, input[placeholder="Enter your active Email ID"]',
   loginPassword: '#passwordField, input[placeholder="Enter your password"]',
-  loginSubmit: 'button[type="submit"]',
+  // Scoped to the login form itself — the top nav also has a "Login" link
+  // that would otherwise match a bare button:has-text("Login").
+  loginSubmit: 'form#loginForm button:has-text("Login"), form.loginForm button[type="submit"]',
   loggedInMarker: '.nI-gNb-drawer__icon, a[title="My Naukri"]',
   // --- Phase 4: apply flow ---
   applyButton: 'button:text-is("Apply"), #apply-button',
@@ -100,12 +102,12 @@ export class NaukriAdapter extends JobPortalAdapter {
       return;
     }
 
-    console.log('[naukri] Not logged in. Opening login form...');
-    const trigger = this.page.locator(SELECTORS.loginTrigger).first();
-    if (await trigger.count()) {
-      await trigger.click();
-      await humanDelay();
-    }
+    // Go straight to the dedicated login page instead of clicking a
+    // homepage trigger element — that trigger's selector was the actual
+    // bug (Naukri's homepage markup had drifted), and this URL is stable.
+    console.log('[naukri] Not logged in. Navigating to the login page...');
+    await this.page.goto('https://login.naukri.com/nLogin/Login.php', { waitUntil: 'domcontentloaded' });
+    await humanDelay();
 
     if (this.credentials?.email && this.credentials?.password) {
       console.log('[naukri] Filling credentials from environment variables...');

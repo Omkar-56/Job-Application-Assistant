@@ -64,6 +64,16 @@ async function main() {
     }
   });
 
+  app.post('/api/jobs/:portalJobId/mark-applied', async (req, res) => {
+    try {
+      await store.updateApplicationStatus(req.params.portalJobId, 'applied');
+      res.json({ ok: true });
+    } catch (err) {
+      console.error('[dashboard] mark-applied failed:', err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   app.get('/api/runs/status', (req, res) => {
     res.json(runManager.getStatus());
   });
