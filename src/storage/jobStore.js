@@ -63,6 +63,7 @@ export class JobStore {
     if (!job) return;
     job.applicationStatus = status;
     if (status === 'applied') job.appliedAt = new Date().toISOString();
+    job.attemptedAt = new Date().toISOString();
     this._save();
   }
 

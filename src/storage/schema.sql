@@ -40,3 +40,8 @@ ALTER TABLE jobs ADD COLUMN IF NOT EXISTS matched_at TIMESTAMPTZ;
 
 CREATE INDEX IF NOT EXISTS idx_jobs_match_score ON jobs (match_score);
 
+-- Phase 9 dashboard follow-up: tracks the last time the apply pipeline
+-- touched a job, regardless of outcome — lets "needs attention" filter to
+-- today's failures specifically instead of every failure ever.
+ALTER TABLE jobs ADD COLUMN IF NOT EXISTS attempted_at TIMESTAMPTZ;
+

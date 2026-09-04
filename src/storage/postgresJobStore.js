@@ -85,7 +85,8 @@ export class PostgresJobStore {
     await this.pool.query(
       `UPDATE jobs
        SET application_status = $1,
-           applied_at = CASE WHEN $1 = 'applied' THEN now() ELSE applied_at END
+           applied_at = CASE WHEN $1 = 'applied' THEN now() ELSE applied_at END,
+           attempted_at = now()
        WHERE portal = $2 AND portal_job_id = $3`,
       [status, this.portal, portalJobId]
     );
@@ -123,16 +124,20 @@ export class PostgresJobStore {
   }
 
   /**
-   * Jobs that need manual follow-up — automation failed, or the listing
-   * requires applying on the company's own site. For the "Needs Your
-   * Attention" dashboard section.
+   * Jobs that need manual follow-up TODAY — automation failed, or the
+   * listing requires applying on the company's own site, attempted today.
+   * Filtered by attempted_at (when the apply pipeline last touched it),
+   * not discovered_at — a job discovered days ago that just failed today
+   * should still show up here.
    * @returns {Promise<object[]>}
    */
   async getNeedsAttention() {
     const { rows } = await this.pool.query(
       `SELECT * FROM jobs
-       WHERE portal = $1 AND application_status IN ('failed', 'external_site')
-       ORDER BY discovered_at DESC`,
+       WHERE portal = $1
+         AND application_status IN ('failed', 'external_site')
+         AND attempted_at::date = CURRENT_DATE
+       ORDER BY attempted_at DESC`,
       [this.portal]
     );
     return rows.map(rowToJob);
@@ -230,6 +235,7 @@ function rowToJob(row) {
     url: row.url,
     applicationStatus: row.application_status,
     appliedAt: row.applied_at,
+    attemptedAt: row.attempted_at,
     descriptionText: row.description_text,
     matchScore: row.match_score === null ? null : Number(row.match_score),
     matchReasoning: row.match_reasoning,
